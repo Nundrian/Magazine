@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "magazine"
+version = "0.1.0"
+description = "Initial Open WebUI API connectivity probe for Magazine"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+magazine-probe = "magazine.probe:main"
+
+[tool.setuptools.packages.find]
+include = ["magazine*"]

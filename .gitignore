@@ -17,3 +17,6 @@ htmlcov/
 .env.*
 *.pem
 *.key
+
+# Saved chat evidence can contain user and model content
+evidence/

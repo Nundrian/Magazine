@@ -44,7 +44,9 @@ def test_valid_preflight_awaits_dispatch(mock_validate):
     )
 
     assert result == "dispatched result"
-    mock_dispatch.assert_awaited_once_with(PROMPT)
+    # The preflight-only wrapper validates all required IDs, then dispatches
+    # with the first (primary) required model ID.
+    mock_dispatch.assert_awaited_once_with(PROMPT, "gpt-4")
     mock_validate.assert_called_once_with(
         BASE_URL, API_KEY, ["gpt-4"], ["web_search"]
     )
@@ -260,7 +262,7 @@ def test_runtime_pair_passes_exact_ids_to_validate_live_runtime_pair(mock_valida
 
 @patch("magazine.runtime_dispatch.validate_live_runtime_pair")
 def test_runtime_pair_successful_validation_dispatches_exactly_once(mock_validate):
-    """When validation succeeds, dispatch is awaited exactly once."""
+    """When validation succeeds, dispatch is awaited exactly once with the resolved model ID."""
     mock_validate.return_value = None
 
     mock_dispatch = AsyncMock(return_value="dispatched result")
@@ -276,7 +278,7 @@ def test_runtime_pair_successful_validation_dispatches_exactly_once(mock_validat
         )
     )
 
-    mock_dispatch.assert_awaited_once_with(PROMPT)
+    mock_dispatch.assert_awaited_once_with(PROMPT, MODEL_ID)
 
 
 @patch("magazine.runtime_dispatch.validate_live_runtime_pair")

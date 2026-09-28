@@ -470,7 +470,7 @@ def test_two_normal_runners_cannot_dispatch_same_run(
         b_prompts: list = []
 
         # A's external dispatch: blocks on the FIRST call (cart-a) only.
-        async def _dispatch_a(prompt: str) -> object:
+        async def _dispatch_a(prompt: str, model_id: str) -> object:
             a_prompts.append(prompt)
             if len(a_prompts) == 1:  # first invocation only
                 first_dispatch_entered.set()
@@ -478,7 +478,7 @@ def test_two_normal_runners_cannot_dispatch_same_run(
             return "done"
 
         # B's external dispatch: must never be reached; failing loudly.
-        async def _dispatch_b(prompt: str) -> object:
+        async def _dispatch_b(prompt: str, model_id: str) -> object:
             b_prompts.append(prompt)
             raise AssertionError(
                 f"runner B external dispatch was invoked: {prompt!r}"

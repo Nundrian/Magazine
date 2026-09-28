@@ -157,7 +157,8 @@ async def run_all_cartridges(
         tool_role: Key into *tool_map* to look up the Tool ID.
         model_map: Mapping of job types to model IDs.
         tool_map: Mapping of tool roles to Tool IDs.
-        dispatch: Async callable accepting a *prompt* string.
+        dispatch: Async callable accepting a *prompt* string and the resolved
+            *model_id* string.
 
     Returns:
         A :class:`MultiCartridgeResult` whose ``final_state`` is the exact

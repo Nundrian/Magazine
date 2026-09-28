@@ -1,4 +1,9 @@
-"""Async dispatch guarded by a live preflight check."""
+"""Async dispatch guarded by a live preflight check.
+
+The external dispatch dependency has the contract ``dispatch(prompt,
+model_id)``: it is awaited with the prompt string and the resolved
+per-cartridge model ID once the live model/Tool ID preflight succeeds.
+"""
 
 from __future__ import annotations
 
@@ -17,6 +22,11 @@ async def dispatch_after_preflight(
 ):
     """Run a preflight validation, then await *dispatch* on success.
 
+    This is the preflight-only dispatch wrapper: it validates that every
+    required model and Tool ID is available at runtime, then awaits the
+    caller-provided async dispatch dependency on the prompt, passing the
+    first required model ID as the resolved *model_id*.
+
     Parameters
     ----------
     base_url : str
@@ -27,15 +37,17 @@ async def dispatch_after_preflight(
         Model IDs that must be available.
     required_tool_ids : list of str
         Tool IDs that must be available.
-    dispatch : callable[[str], Awaitable]
-        Async callable that accepts a *prompt* string and returns a result.
+    dispatch : callable[[str, str], Awaitable]
+        Async callable that accepts a *prompt* string and a resolved
+        *model_id* string and returns a result.  All required model and
+        Tool IDs are validated before it is invoked.
     prompt : str
         The prompt to pass to *dispatch*.
 
     Returns
     -------
     Any
-        The result returned by ``await dispatch(prompt)``.
+        The result returned by ``await dispatch(prompt, required_model_ids[0])``.
 
     Raises
     ------
@@ -44,7 +56,7 @@ async def dispatch_after_preflight(
         :func:`validate_live_ids`).
     """
     validate_live_ids(base_url, api_key, required_model_ids, required_tool_ids)
-    return await dispatch(prompt)
+    return await dispatch(prompt, required_model_ids[0])
 
 
 async def dispatch_runtime_pair(
@@ -57,6 +69,10 @@ async def dispatch_runtime_pair(
 ):
     """Validate a live model/Tool ID pair, then await *dispatch* on success.
 
+    This is the runtime-pair dispatch path: it preflights the exact model/Tool
+    pair, then awaits the caller-provided async dispatch dependency, passing
+    the resolved *model_id* through to it.
+
     Parameters
     ----------
     base_url : str
@@ -67,15 +83,16 @@ async def dispatch_runtime_pair(
         The model ID to validate and dispatch with.
     tool_id : str
         The tool ID to validate and dispatch with.
-    dispatch : callable[[str], Awaitable]
-        Async callable that accepts a *prompt* string and returns a result.
+    dispatch : callable[[str, str], Awaitable]
+        Async callable that accepts a *prompt* string and the resolved
+        *model_id* string and returns a result.
     prompt : str
         The prompt to pass to *dispatch*.
 
     Returns
     -------
     Any
-        The result returned by ``await dispatch(prompt)``.
+        The result returned by ``await dispatch(prompt, model_id)``.
 
     Raises
     ------
@@ -84,7 +101,7 @@ async def dispatch_runtime_pair(
         :func:`validate_live_runtime_pair`).
     """
     validate_live_runtime_pair(base_url, api_key, model_id, tool_id)
-    return await dispatch(prompt)
+    return await dispatch(prompt, model_id)
 
 
 async def dispatch_routed(
@@ -98,6 +115,11 @@ async def dispatch_routed(
     prompt: str,
 ):
     """Resolve model and tool IDs, then run preflight + dispatch.
+
+    This is the routed (job-type -> model) dispatch path: it resolves the exact
+    model ID from the job type and the Tool ID from the role, preflights the
+    pair, and dispatches the prompt, passing the resolved *model_id* through
+    to the external dispatch dependency.
 
     Parameters
     ----------
@@ -113,8 +135,9 @@ async def dispatch_routed(
         Mapping of job types to model IDs.
     tool_map : dict
         Mapping of tool roles to tool IDs.
-    dispatch : callable[[str], Awaitable]
-        Async callable that accepts a *prompt* string and returns a result.
+    dispatch : callable[[str, str], Awaitable]
+        Async callable that accepts a *prompt* string and the resolved
+        *model_id* string and returns a result.
     prompt : str
         The prompt to pass to *dispatch*.
 
@@ -159,7 +182,8 @@ async def dispatch_cartridge(
     dispatch. It guarantees that a raw cartridge is validated *before* any
     runtime/worker dispatch is attempted, and that the validated cartridge's
     exact ``job_type`` and ``prompt`` are forwarded unchanged to the existing
-    routed dispatch path.
+    routed dispatch path.  The resolved per-cartridge *model_id* is passed
+    through to the external dispatch dependency.
 
     Parameters
     ----------
@@ -176,8 +200,9 @@ async def dispatch_cartridge(
         Mapping of job types to model IDs.
     tool_map : dict
         Mapping of tool roles to tool IDs.
-    dispatch : callable[[str], Awaitable]
-        Async callable that accepts a *prompt* string and returns a result.
+    dispatch : callable[[str, str], Awaitable]
+        Async callable that accepts a *prompt* string and the resolved
+        *model_id* string and returns a result.
 
     Returns
     -------

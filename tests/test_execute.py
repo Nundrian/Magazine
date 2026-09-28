@@ -57,16 +57,17 @@ def test_successful_path_dispatches_exact_cartridge_prompt_once(
     tmp_path: Path,
 ) -> None:
     """RUNNING + matching cartridge + valid routing + passing preflight
-    dispatches the exact cartridge prompt once, returns a CartridgeDispatch
-    bundling the dispatched cartridge ID with the dispatch result, and leaves
-    the persisted state and run lock
-    untouched.
+    dispatches the exact cartridge prompt and resolved model ID once, returns
+    a CartridgeDispatch bundling the dispatched cartridge ID with the dispatch
+    result, and leaves the persisted state and run lock untouched.
 
     The existing runtime dispatch is exercised for real: routing
     (magazine.routing) and the dispatch composition
     (magazine.runtime_dispatch) both run. Only the preflight
     (:func:`validate_live_runtime_pair`) and the final dispatch callback
-    are stubbed, so no real Open WebUI / HTTP calls are made.
+    are stubbed, so no real Open WebUI / HTTP calls are made.  The external
+    dispatch is invoked as ``dispatch(prompt, model_id)`` with the per-cartridge
+    model resolved by routing.
     """
     # Preflight succeeds without any live discovery (no HTTP).
     mock_preflight.return_value = None
@@ -118,8 +119,8 @@ def test_successful_path_dispatches_exact_cartridge_prompt_once(
     # from the cartridge's job_type and the supplied tool role.
     mock_preflight.assert_called_once_with(BASE_URL, API_KEY, MODEL_ID, TOOL_ID)
 
-    # --- dispatches the exact cartridge prompt once ---------------------
-    mock_dispatch.assert_awaited_once_with(CURRENT_PROMPT)
+    # --- dispatches the exact cartridge prompt + resolved model ID once --
+    mock_dispatch.assert_awaited_once_with(CURRENT_PROMPT, MODEL_ID)
 
     # --- returns a CartridgeDispatch bundling the dispatched cartridge ID
     #     with the exact runtime result object ---------------------------

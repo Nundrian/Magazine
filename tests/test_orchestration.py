@@ -145,7 +145,7 @@ def test_execute_one_cartridge_advances_a_non_final_cartridge(
     # --- 4. the fake dispatch was called exactly once for "cart-b" --------
     #     (assert_awaited_once_with asserts a single await with this exact
     #      argument; "prompt for cart-b" is only ever produced for "cart-b").
-    mock_dispatch.assert_awaited_once_with(CARTRIDGE_PROMPT)
+    mock_dispatch.assert_awaited_once_with(CARTRIDGE_PROMPT, MODEL_ID)
     assert mock_dispatch.await_count == 1
 
     # --- 5. the returned post-completion state is exactly the non-final
@@ -248,11 +248,12 @@ def test_execute_one_cartridge_rejects_drifted_current_before_completion(
     # External runtime dispatch callback: confirm it was invoked for cart-b,
     # drift the persisted state while the dispatch is in flight, capture the
     # exact bytes of the new state, and return a normal successful result.
-    def _side_effect(prompt: str):
-        # 1. Confirm it was invoked for cart-b's prompt.
+    def _side_effect(prompt: str, model_id: str):
+        # 1. Confirm it was invoked for cart-b's prompt and model ID.
         assert (
             prompt == CARTRIDGE_PROMPT
         ), f"dispatched unexpected prompt {prompt!r}; expected {CARTRIDGE_PROMPT!r}"
+        assert model_id == MODEL_ID
         # 2. Persist the drifted valid state BEFORE the callback returns.
         state_store.save_run_state(str(state_path), drifted)
         # 3. Capture the exact bytes of the newly persisted state.
@@ -280,8 +281,8 @@ def test_execute_one_cartridge_rejects_drifted_current_before_completion(
         )
 
     # --- 1. the external dispatch callback was invoked exactly once for cart-b
-    #     (a single await with cart-b's exact prompt).
-    mock_dispatch.assert_awaited_once_with(CARTRIDGE_PROMPT)
+    #     (a single await with cart-b's exact prompt and model ID).
+    mock_dispatch.assert_awaited_once_with(CARTRIDGE_PROMPT, MODEL_ID)
     assert mock_dispatch.await_count == 1
 
     # --- 2/3. the dispatch callback returned normally: the only exception
@@ -449,8 +450,8 @@ def test_execute_one_cartridge_never_completes_when_dispatch_fails(
     #     exact current in the persisted state), so a single await with this
     #     exact argument proves cart-b — and only cart-b — was dispatched.
     #     Restated at the argument level via await_args. -------------------
-    mock_dispatch.assert_awaited_once_with(CARTRIDGE_PROMPT)
-    assert mock_dispatch.await_args == call(CARTRIDGE_PROMPT)
+    mock_dispatch.assert_awaited_once_with(CARTRIDGE_PROMPT, MODEL_ID)
+    assert mock_dispatch.await_args == call(CARTRIDGE_PROMPT, MODEL_ID)
 
     # --- 4. The completion boundary mock was never called: the Stage-3
     #     boundary ``magazine.complete.complete_current_cartridge`` was

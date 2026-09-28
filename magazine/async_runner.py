@@ -91,8 +91,8 @@ async def run_magazine(
             loop).
         tool_map: Mapping of tool roles to Tool IDs (forwarded to the run
             loop).
-        dispatch: Async callable accepting a *prompt* string (forwarded to the
-            run loop, unchanged).
+        dispatch: Async callable accepting a *prompt* string and the resolved
+            *model_id* string (forwarded to the run loop, unchanged).
 
     Returns:
         The authoritative final/terminal run state dict: ``final_state`` from

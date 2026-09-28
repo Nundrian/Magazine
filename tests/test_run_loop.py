@@ -85,11 +85,16 @@ def test_run_all_cartridges_advances_two_cartridges_to_completion(
     """A valid ``RUNNING`` run with ``current == "cart-b"`` and one queued
     ``cart-c`` is advanced through the real Stage-5 loop until ``COMPLETED``.
 
-    The loop dispatches exactly cart-b then cart-c (two distinct prompts, in
-    order), completes each, guarded-begins cart-c between the two, and stops
-    after cart-c completes.  The returned ``MultiCartridgeResult.final_state``
-    is exactly the fully-completed state, the persisted state matches it, and
-    the run lock is released.
+    The two dispatched cartridges use *different* job types — and hence two
+    *different* resolved models: "model-A" for cart-b (research) and
+    "model-B" for cart-c (summarize).  This proves the single shared dispatch
+    dependency receives the resolved per-cartridge model ID on each call.
+    The loop dispatches exactly cart-b/model-A then cart-c/model-B (two
+    distinct (prompt, model_id) pairs, in order), completes each,
+    guarded-begins cart-c between the two, and stops after cart-c completes.
+    The returned ``MultiCartridgeResult.final_state`` is exactly the fully-
+    completed state, the persisted state matches it, and the run lock is
+    released.
     """
     # No live discovery needed: the runtime-pair preflight boundary is a no-op.
     mock_preflight.return_value = None
@@ -103,7 +108,7 @@ def test_run_all_cartridges_advances_two_cartridges_to_completion(
             "cartridges": [
                 {"id": "cart-a", "job_type": "research", "prompt": PROMPT_A},
                 {"id": "cart-b", "job_type": "research", "prompt": PROMPT_B},
-                {"id": "cart-c", "job_type": "research", "prompt": PROMPT_C},
+                {"id": "cart-c", "job_type": "summarize", "prompt": PROMPT_C},
             ],
         },
     )
@@ -125,13 +130,13 @@ def test_run_all_cartridges_advances_two_cartridges_to_completion(
     # No lock file before the call.
     assert not Path(lock_path).exists()
 
-    # External runtime dispatch callback: records every prompt in exact order
-    # and returns a distinct stable successful value per cartridge.  No state
-    # mutation.
-    prompts: list[str] = []
+    # External runtime dispatch callback: records every (prompt, model_id)
+    # pair in exact order and returns a distinct stable successful value per
+    # cartridge.  No state mutation.
+    pairs: list[tuple[str, str]] = []
 
-    def _fake_dispatch(prompt: str):
-        prompts.append(prompt)
+    def _fake_dispatch(prompt: str, model_id: str):
+        pairs.append((prompt, model_id))
         if prompt == PROMPT_B:
             return SENTINEL_B
         if prompt == PROMPT_C:
@@ -150,7 +155,7 @@ def test_run_all_cartridges_advances_two_cartridges_to_completion(
             base_url=BASE_URL,
             api_key=API_KEY,
             tool_role="terminal",
-            model_map={"research": "m1"},
+            model_map={"research": "model-A", "summarize": "model-B"},
             tool_map={"terminal": "bash"},
             dispatch=mock_dispatch,
         )
@@ -162,14 +167,15 @@ def test_run_all_cartridges_advances_two_cartridges_to_completion(
     # --- 2. the external dispatch callback was invoked exactly twice ---------
     assert mock_dispatch.await_count == 2
 
-    # --- 3. exact dispatch order: cart-b prompt first, cart-c prompt second --
-    assert prompts == [PROMPT_B, PROMPT_C]
+    # --- 3. exact dispatch order: cart-b/model-A first, cart-c/model-B second
+    #     (two different models prove the per-cartridge model_id is forwarded)
+    assert pairs == [(PROMPT_B, "model-A"), (PROMPT_C, "model-B")]
 
     # --- 4. no cartridge was dispatched twice --------------------------------
-    assert len(set(prompts)) == 2
+    assert len(set(pairs)) == 2
 
     # --- 5. no other cartridge was dispatched --------------------------------
-    assert set(prompts) == {PROMPT_B, PROMPT_C}
+    assert set(pairs) == {(PROMPT_B, "model-A"), (PROMPT_C, "model-B")}
 
     # --- 6. the returned final_state is exactly the completed state ---------
     expected_final = {
@@ -289,7 +295,7 @@ def test_run_all_cartridges_stops_on_dispatch_failure(
     prompts: list[str] = []
     FAILURE = DispatchFailure("external dispatch for cart-b failed")
 
-    def _fake_dispatch(prompt: str):
+    def _fake_dispatch(prompt: str, model_id: str):
         prompts.append(prompt)
         if prompt == PROMPT_B:
             raise FAILURE
@@ -447,7 +453,7 @@ def test_run_all_cartridges_completion_failure_never_begins_next(
     # mutation.  Any unexpected prompt fails the test.
     prompts: list[str] = []
 
-    def _fake_dispatch(prompt: str):
+    def _fake_dispatch(prompt: str, model_id: str):
         prompts.append(prompt)
         if prompt == PROMPT_B:
             return SENTINEL_B
@@ -489,8 +495,8 @@ def test_run_all_cartridges_completion_failure_never_begins_next(
     # --- 2. the external dispatch callback was awaited exactly once -----------
     assert mock_dispatch.await_count == 1
 
-    # --- 3. its sole argument was cart-b's exact prompt -----------------------
-    mock_dispatch.assert_awaited_once_with(PROMPT_B)
+    # --- 3. its sole arguments were cart-b's exact prompt and model ID -------
+    mock_dispatch.assert_awaited_once_with(PROMPT_B, "m1")
     assert prompts == [PROMPT_B]
 
     # --- 4. cart-c was never dispatched ---------------------------------------
@@ -637,7 +643,7 @@ def test_run_all_cartridges_begin_next_race_detected_under_lock(
     # other dispatch fails the test.
     prompts: list[str] = []
 
-    def _fake_dispatch(prompt: str):
+    def _fake_dispatch(prompt: str, model_id: str):
         prompts.append(prompt)
         if prompt == PROMPT_B:
             return SENTINEL_B
@@ -727,7 +733,7 @@ def test_run_all_cartridges_begin_next_race_detected_under_lock(
 
     # --- 1. cart-b was externally dispatched exactly once --------------------
     assert mock_dispatch.await_count == 1
-    mock_dispatch.assert_awaited_once_with(PROMPT_B)
+    mock_dispatch.assert_awaited_once_with(PROMPT_B, "m1")
 
     # --- 2/3. cart-b was genuinely completed by the real completion path; the
     #     wrapper observed the exact READY state at revision 2 immediately
@@ -870,7 +876,7 @@ def test_run_all_cartridges_final_cartridge_returns_completed_without_begin_next
     # exact prompt.  Any other prompt or a second call fails the test.
     prompts: list[str] = []
 
-    def _fake_dispatch(prompt: str):
+    def _fake_dispatch(prompt: str, model_id: str):
         prompts.append(prompt)
         if prompt == PROMPT_C:
             return SENTINEL_C

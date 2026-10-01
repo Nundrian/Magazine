@@ -10,8 +10,9 @@ Composition sequence:
 
   1. Load the persisted state via ``state_store.load_run_state``.
   2. Require ``status == STATUS_RUNNING``; otherwise raise ``ValueError``.
-  3. Read the Magazine document and validate it via
-     ``schema.load_magazine_json`` + ``schema.validate_magazine``.
+  3. Load the Magazine document through the single loading boundary
+     ``magazine.document.load_document``, which performs the existing strict
+     JSON parsing + schema validation.
   4. Take ``current_id`` from the persisted state.
   5. Find the cartridge whose ``id`` exactly matches ``current_id``.
   6. If no matching cartridge exists, raise ``ValueError``.
@@ -26,11 +27,10 @@ no loops, no locking, and no environment loading.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
+from magazine import document
 from magazine import runtime_dispatch
-from magazine import schema
 from magazine import state
 from magazine import state_store
 
@@ -89,7 +89,7 @@ async def dispatch_current_cartridge(
         magazine.state.MagazineStateError: If the persisted state is malformed
             (propagated from ``state_store.load_run_state``).
         magazine.schema.MagazineSchemaError: If the Magazine document is
-            invalid (propagated from ``schema.validate_magazine``).
+            invalid (propagated from ``magazine.document.load_document``).
     """
     # 1. Load the persisted run state.
     run_state = state_store.load_run_state(state_path)
@@ -101,17 +101,16 @@ async def dispatch_current_cartridge(
             f"{run_state['status']!r}; expected {state.STATUS_RUNNING!r}"
         )
 
-    # 3. Read the Magazine document and validate it strictly.
-    document_text = Path(magazine_path).read_text(encoding="utf-8")
-    document = schema.load_magazine_json(document_text)
-    schema.validate_magazine(document)
+    # 3. Load the Magazine document through the single loading boundary.
+    #    Strict-JSON parsing and schema validation happen inside the boundary.
+    magazine_doc = document.load_document(magazine_path)
 
     # 4. The persisted state is authoritative: take current_id from it.
     current_id = run_state["current"]
 
     # 5. Find the cartridge whose id exactly matches current_id.
     cartridge = None
-    for item in document["cartridges"]:
+    for item in magazine_doc["cartridges"]:
         if item["id"] == current_id:
             cartridge = item
             break

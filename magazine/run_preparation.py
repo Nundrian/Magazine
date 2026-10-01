@@ -12,7 +12,8 @@ module is neutral and shared: both the synchronous CLI adapter
     re-derives paths or re-reads state between admission and dispatch.
 
 This module is strictly *preparation*: it validates the owner ID, loads and
-schema-validates the magazine, creates the run directory, derives the run
+validates the magazine through the single document boundary
+(:mod:`magazine.document`), creates the run directory, derives the run
 paths exactly once, and performs the single atomic first-run admission via
 :func:`magazine.run_action.persist_admit_run`.  It does not print, does not
 map errors to exit codes, does not catch :class:`magazine.run_action.RunAdmissionError`
@@ -27,9 +28,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from magazine import document
 from magazine import run_action
 from magazine import run_lock
-from magazine import schema
 from magazine import state
 
 
@@ -82,23 +83,21 @@ def prepare_run(
             "owner_id must not be empty or whitespace-only"
         )
 
-    # 1. Load the magazine document.
-    text = Path(magazine_path).read_text(encoding="utf-8")
+    # 1. Load the magazine document through the single loading boundary.
+    #    Strict-JSON parsing and schema validation happen inside the boundary,
+    #    before any filesystem side effect here.
+    magazine_doc = document.load_document(magazine_path)
+    cartridge_ids = [c["id"] for c in magazine_doc["cartridges"]]
 
-    # 2. Validate before any filesystem side effect.
-    document = schema.load_magazine_json(text)
-    schema.validate_magazine(document)
-    cartridge_ids = [c["id"] for c in document["cartridges"]]
-
-    # 3. Prepare the state directory.
+    # 2. Prepare the state directory.
     run_dir = Path(state_dir) / "run"
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    # 4. Derive state_path and lock_path exactly once.
+    # 3. Derive state_path and lock_path exactly once.
     state_path = str(run_dir / "state.json")
     lock_path = str(run_dir / ".lock")
 
-    # 5. Atomic first-run admission.  persist_admit_run acquires the run lock
+    # 4. Atomic first-run admission.  persist_admit_run acquires the run lock
     #    BEFORE checking the state file, creates the state file as a fresh
     #    READY only when it is missing (still under that lock), then branches
     #    on the freshly-loaded status: READY -> RUNNING, COMPLETED / HALTED

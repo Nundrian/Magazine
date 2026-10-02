@@ -1,9 +1,10 @@
 """Synchronous CLI adapter for Magazine run preparation.
 
-The CLI loads and validates a Magazine document or unpacked package, creates
-the run directory when needed and performs atomic first run admission.  It does
-not dispatch cartridges; full execution is provided by
-``magazine.async_runner.run_magazine`` / ``run_magazine_open_webui``.
+The CLI loads and validates a Magazine JSON document, an unpacked package, or
+a ``.magazine`` archive package, creates the run directory when needed and
+performs atomic first run admission.  It does not dispatch cartridges; full
+execution is provided by ``magazine.async_runner.run_magazine`` /
+``run_magazine_open_webui``.
 
 Exit codes: 0 on successful preparation or an already terminal run; 1 on any
 error.
@@ -93,7 +94,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--magazine",
         required=True,
-        help="Path to a Magazine document (JSON file or unpacked folder)",
+        help="Path to a Magazine document (JSON file, unpacked folder, or ``.magazine`` archive package)",
     )
     parser.add_argument(
         "--state-dir",

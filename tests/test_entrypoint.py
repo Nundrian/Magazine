@@ -1,15 +1,18 @@
 """Focused tests for magazine.entrypoint (stage-1 composition).
 
-Exactly three tests:
   1. A valid Magazine run is prepared end-to-end (fresh state -> RUNNING).
   2. An invalid Magazine follows the validation path with no side effects.
-  3. Startup/recovery states map to the correct exit codes via the existing
+  3. A valid .magazine archive prepares a run end-to-end.
+  4. A bad .magazine archive fails validation with no side effects.
+  5. Startup/recovery states map to the correct exit codes via the existing
      inspection API, with no state mutation in the non-STARTABLE branches.
 """
 
 from __future__ import annotations
 
 import json
+import os
+import zipfile
 from pathlib import Path
 
 from magazine import entrypoint
@@ -37,6 +40,39 @@ def _state_dir(path: Path, **state: object) -> Path:
     state_path.parent.mkdir(parents=True, exist_ok=True)
     state_path.write_text(json.dumps(state), encoding="utf-8")
     return state_path
+
+
+def _build_unpacked_package(package_dir: Path) -> None:
+    """Write the minimal unpacked package used by the archive tests."""
+    (package_dir / "cartridges").mkdir(parents=True, exist_ok=True)
+    (package_dir / "cartridges" / "a.md").write_text(
+        "prompt for a", encoding="utf-8"
+    )
+    (package_dir / "magazine.yaml").write_text(
+        '''schema_version: "1.0"
+name: Demo
+cartridges:
+  - id: a
+    model: research
+    prompt_file: cartridges/a.md
+''',
+        encoding="utf-8",
+    )
+
+
+def _package_directory_to_archive(
+    package_dir: Path, archive_path: Path
+) -> Path:
+    """Zip the unpacked package directory into a ``.magazine`` file."""
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        for root, dirs, files in os.walk(package_dir):
+            for f in files:
+                p = Path(root) / f
+                archive.write(str(p), os.path.relpath(p, package_dir))
+            for d in dirs:
+                p = Path(root) / d
+                archive.writestr(os.path.relpath(p, package_dir) + "/", "")
+    return archive_path
 
 
 def test_prepare_valid_run_end_to_end(tmp_path: Path) -> None:
@@ -94,6 +130,51 @@ def test_invalid_magazine_follows_validation_path(
     err = capsys.readouterr().err
     assert "Missing required cartridge fields" in err
     assert "Traceback" not in err, "CLI must not show a traceback"
+
+
+def test_prepare_archive_run_end_to_end(tmp_path) -> None:
+    """A valid ``.magazine`` archive prepares a run end-to-end."""
+    package_dir = tmp_path / "pkg"
+    _build_unpacked_package(package_dir)
+    archive = _package_directory_to_archive(
+        package_dir, tmp_path / "magazine.magazine"
+    )
+    state_dir = tmp_path / "state"
+
+    rc = entrypoint.main([
+        "--magazine", str(archive),
+        "--state-dir", str(state_dir),
+    ])
+
+    assert rc == 0, "valid archive run preparation must exit 0"
+    state = json.loads((state_dir / "run" / "state.json").read_text())
+    assert state == {
+        "done": [],
+        "current": "a",
+        "todo": [],
+        "status": "RUNNING",
+        "revision": 1,
+    }
+    # persist_begin_next_cartridge releases the lock on all paths.
+    assert not (state_dir / "run" / ".lock").exists()
+
+
+def test_prepare_invalid_archive_has_no_side_effects(tmp_path, capsys):
+    """A corrupted ``.magazine`` archive fails before state creation."""
+    (tmp_path / "bad.magazine").write_text("not a zip", encoding="utf-8")
+    state_dir = tmp_path / "state"
+
+    rc = entrypoint.main([
+        "--magazine", str(tmp_path / "bad.magazine"),
+        "--state-dir", str(state_dir),
+    ])
+
+    assert rc == 1, "corrupt archive run preparation must exit 1"
+    assert not (state_dir / "run").exists(), (
+        "state directory must not be created when the archive fails validation"
+    )
+    err = capsys.readouterr().err
+    assert "Traceback" not in err, "CLI must not display a traceback"
 
 
 def test_startup_recovery_branches(tmp_path: Path) -> None:

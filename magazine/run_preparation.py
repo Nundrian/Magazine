@@ -61,8 +61,8 @@ def prepare_run(
     """Load, validate, and admit a first run; return a :class:`PreparedRun`.
 
     Args:
-        magazine_path: Path to a Magazine document (JSON file or unpacked
-            Magazine folder).
+        magazine_path: Path to a Magazine document (JSON file, unpacked
+            Magazine folder, or ``.magazine`` archive package).
         state_dir: Directory containing the run/ state subdirectory.
         owner_id: Owner ID written into the run lock.
 
@@ -86,10 +86,11 @@ def prepare_run(
 
     # 1. Load the magazine document through the single loading boundary.
     #    Strict-JSON parsing and schema validation happen inside the boundary,
-    #    before any filesystem side effect here.  For an unpacked folder the
-    #    boundary also returns the immutable execution plan; the compatibility
-    #    document (`.document`) drives the once-derived cartridge IDs, exactly
-    #    as before, so admission is unchanged.
+    #    before any filesystem side effect here.  For an unpacked folder or a
+    #    ``.magazine`` archive the boundary also returns the immutable
+    #    execution plan; the compatibility document (`.document`) drives the
+    #    once-derived cartridge IDs, exactly as before, so admission is
+    #    unchanged.
     magazine_load = document.load_document(magazine_path)
     cartridge_ids = [c["id"] for c in magazine_load.document["cartridges"]]
 

@@ -1,7 +1,15 @@
-"""Minimal unpacked Magazine package loading.
+"""Unpacked Magazine package loading.
 
 An unpacked Magazine package is a directory containing ``magazine.yaml`` and
-one prompt file per cartridge.  Manifest list order is execution order.
+one prompt file per cartridge.  A ``.magazine`` file is a ZIP archive of the
+same unpacked layout (``magazine.yaml`` at the root, prompt files under
+``cartridges/``); it is extracted into a temporary workspace before loading and
+the workspace is always removed, even when loading fails.  Manifest list order
+is execution order.
+
+ZIP member names are validated before anything is written: empty names,
+absolute paths (POSIX and Windows), ``..`` traversal, backslash-separated
+names, and any member that is not a regular file or directory are rejected.
 
 The v1 active schema deliberately contains only orchestration data Magazine
 needs to run a cartridge:
@@ -28,8 +36,11 @@ are intentionally not part of the active Magazine v1 package contract.
 from __future__ import annotations
 
 import os
+import re
+import tempfile
+import zipfile
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 import yaml
@@ -43,6 +54,20 @@ PACKAGE_MANIFEST_NAME = "magazine.yaml"
 SCHEMA_VERSION_V1 = "1.0"
 TOP_LEVEL_FIELDS = ("schema_version", "name", "cartridges")
 CARTRIDGE_FIELDS = ("id", "model", "prompt_file")
+
+# A ``.magazine`` file is a ZIP archive of the unpacked layout.
+MAGAZINE_ARCHIVE_EXTENSION = ".magazine"
+MAGAZINE_ARCHIVE_WORKSPACE_PREFIX = "magazine-archive-"
+
+# Raw Unix file-type bits.  Raw octal constants are used (rather than the
+# ``stat.S_IS*`` accessors) because those accessors are not consistently
+# int constants in every runtime build; the values below are the canonical
+# low-type bits returned by ``st_mode & 0o170000``.
+_S_IFMT = 0o170000  # file-type bits (mask)
+_S_ISREG = 0o100000  # regular file
+_S_ISDIR = 0o40000  # directory
+_S_ISLNK = 0o120000  # symbolic link
+_S_ISFIFO = 0o10000  # FIFO / named pipe
 
 
 @dataclass(frozen=True)
@@ -115,17 +140,33 @@ def _require_path_string(value: Any, context: str, field: str) -> str:
 
 
 def load_package(root: str | os.PathLike[str]) -> LoadedPackage:
-    """Load a strict minimal v1 unpacked Magazine package.
+    """Load a strict minimal v1 Magazine package.
+
+    *root* is either the directory of an unpacked package, or a file ending
+    in ``.magazine`` — a ZIP archive containing the same unpacked layout.
+    Directory behaviour is unchanged.
 
     All prompt paths are package-relative and are resolved with
     :func:`magazine.paths.resolve_contained_path` before being read.  Unknown
     fields are rejected so out-of-scope experimental declarations cannot
     silently become runtime behaviour.
+
+    For a ``.magazine`` file the archive is extracted into a temporary
+    workspace (validated members, deterministic cleanup) and loaded through
+    the same unpacked path; the returned ``root`` is that temporary
+    workspace, so ``prompt_path`` is valid only during loading and only the
+    verbatim prompt text is retained afterwards.
     """
     root_path = Path(root).resolve()
+    if root_path.is_file() and root_path.suffix == MAGAZINE_ARCHIVE_EXTENSION:
+        return _load_package_archive(root_path)
     if not root_path.is_dir():
         raise FileNotFoundError(f"package root is not a directory: {root_path}")
+    return _load_unpacked_package(root_path)
 
+
+def _load_unpacked_package(root_path: Path) -> LoadedPackage:
+    """Load the unpacked-directory layout, shared by directories and archives."""
     manifest_path = root_path / PACKAGE_MANIFEST_NAME
     if not manifest_path.is_file():
         raise FileNotFoundError(f"missing package manifest: {manifest_path}")
@@ -225,6 +266,91 @@ def load_package(root: str | os.PathLike[str]) -> LoadedPackage:
         root=root_path,
         name=name,
         cartridges=tuple(records),
+    )
+
+
+def _load_package_archive(archive_path: Path) -> LoadedPackage:
+    """Load a ``.magazine`` archive by extracting it into a temporary workspace
+    and loading that workspace through the unpacked path.
+
+    The workspace is created with :class:`tempfile.TemporaryDirectory`, so
+    cleanup is deterministic: it is always removed when the ``with`` block
+    exits, including when member validation, manifest loading, or schema
+    validation fails mid-way.
+    """
+    with tempfile.TemporaryDirectory(prefix=MAGAZINE_ARCHIVE_WORKSPACE_PREFIX) as work_dir:
+        _extract_package_archive(archive_path, work_dir)
+        return _load_unpacked_package(Path(work_dir))
+
+
+def _extract_package_archive(archive_path: Path, work_dir: str) -> None:
+    """Validate every member of a ``.magazine`` archive, then extract it into
+    ``work_dir``.
+
+    Members are validated *before* anything is written so no unsafe member
+    can be materialized.  A final containment check is kept as defence in
+    depth.
+    """
+    with zipfile.ZipFile(archive_path, "r") as archive:
+        members = list(archive.infolist())
+        for info in members:
+            _validate_member_info(info)
+        for info in members:
+            archive.extract(info, work_dir)
+
+    workspace = Path(work_dir).resolve()
+    for info in members:
+        target = (workspace / info.filename).resolve()
+        if not target.is_relative_to(workspace):
+            raise ValueError(
+                f"archive member escaped the extraction workspace: {info.filename!r}"
+            )
+
+
+def _validate_member_info(info: zipfile.ZipInfo) -> None:
+    """Validate a single archive member, raising :class:`ValueError` if it is
+    not safe to materialize.
+
+    Rejected members (in this order):
+
+    * empty or whitespace-only names;
+    * absolute paths (POSIX ``/`` or Windows drive/UNC);
+    * ``..`` path components (path traversal);
+    * backslash-separated names (ZIP archives are slash-based; a backslash
+      would otherwise materialize as a literal character in the file name);
+    * members whose type bits indicate a dangerous or non-data file type
+      (symlinks, FIFOs, block/character devices, mount points, ...).  Plain
+      data members — regular files, directories, and untyped members (the
+      common case for ZIP entries created without explicit Unix type bits) —
+      are accepted; a name ending in ``/`` is also accepted as a directory.
+    """
+    name = info.filename
+    if not name or not name.strip():
+        raise ValueError(f"archive member path must not be empty: {name!r}")
+    normalized = name.replace("\\", "/")
+    if (
+        PurePosixPath(normalized).is_absolute()
+        or PureWindowsPath(normalized).is_absolute()
+        or re.match(r"^[A-Za-z]:", normalized)
+    ):
+        raise ValueError(f"archive member path is absolute: {name!r}")
+    if ".." in PurePosixPath(normalized).parts:
+        raise ValueError(
+            f"archive member path escapes the package root: {name!r}"
+        )
+    if name != normalized:
+        raise ValueError(f"archive member name may not contain backslashes: {name!r}")
+
+    file_type = (info.external_attr >> 16) & _S_IFMT
+    if file_type == _S_ISLNK:
+        raise ValueError(f"archive member is a symbolic link: {name!r}")
+    # Directory by Unix type bit, or by the conventional trailing-slash ZIP
+    # directory-entry convention.
+    is_directory = name.endswith("/") or file_type == _S_ISDIR
+    if is_directory or file_type in (0, _S_ISREG):
+        return
+    raise ValueError(
+        f"archive member is not a regular file or directory: {name!r}"
     )
 
 

@@ -302,3 +302,67 @@ def test_save_cartridge_result_hostile_id_stays_in_results(tmp_path: Path) -> No
         # No leak outside results/.
         assert not (tmp_path / "evil").exists()
         assert not (tmp_path / "evil.txt").exists()
+
+
+# --- collision safety: sanitisation must be injective over distinct IDs -----
+
+
+def test_result_path_injective_for_previously_colliding_pairs(
+    tmp_path: Path,
+) -> None:
+    """Distinct cartridge IDs that the pre-fix scheme collapsed to a single
+    token (``"a/b"`` / ``"a b"`` / ``"a_b"`` -> ``"a_b"``) must now map to
+    distinct, deterministic, in-results paths."""
+    run_dir = str(tmp_path)
+    ids = ("a/b", "a b", "a_b")
+    paths = [result_store.result_path(run_dir, cid) for cid in ids]
+    # distinct IDs -> distinct paths (the pre-fix collision is gone).
+    assert len(set(paths)) == len(ids)
+    # deterministic: same ID -> same path.
+    for cid, path in zip(ids, paths):
+        assert result_store.result_path(run_dir, cid) == path
+    for path in paths:
+        _assert_in_results(path, tmp_path)
+        _no_subdirs_under_results(path, tmp_path)
+
+
+def test_colliding_ids_persist_to_independent_files(tmp_path: Path) -> None:
+    """Regression: the historical collision, where two distinct cartridge IDs
+    wrote to the same ``<token>.txt`` and one result overwrote the other.
+    Both results must now survive independently, byte-exact, in distinct files."""
+    run_dir = str(tmp_path)
+    pair = ("a/b", "a_b")
+    payloads = {"a/b": "slash-payload", "a_b": "underscore-payload"}
+    for cid in pair:
+        result_store.save_cartridge_result(run_dir, cid, payloads[cid])
+
+    # The two IDs must land on distinct files.
+    p_slash = result_store.result_path(run_dir, "a/b")
+    p_underscore = result_store.result_path(run_dir, "a_b")
+    assert p_slash != p_underscore
+    assert Path(p_slash).name != Path(p_underscore).name
+
+    # Each result survived, byte-exact, in its own file (no overwriting).
+    assert Path(p_slash).read_bytes() == payloads["a/b"].encode("utf-8")
+    assert Path(p_underscore).read_bytes() == payloads["a_b"].encode("utf-8")
+
+    # Exactly two files exist; nothing was clobbered.
+    assert set((tmp_path / "results").iterdir()) == {Path(p_slash), Path(p_underscore)}
+
+
+def test_mixed_safe_and_unsafe_ids_never_collide(tmp_path: Path) -> None:
+    """A safe ID and an unsafe ID that would have collapsed to the same token
+    (e.g. ``"x_y"`` vs ``"x y"`` / ``"x/y"``) must never land on the same
+    file, and a mixed batch of distinct IDs must all be distinct."""
+    run_dir = str(tmp_path)
+    ids = (
+        "x y", "x/y", "a:b", "a/b", "a b",
+        "x_y", "x-y", "x.y", "x", "x.", ".x",
+    )
+    paths = [result_store.result_path(run_dir, cid) for cid in ids]
+    assert len(set(paths)) == len(ids)
+    for cid, path in zip(ids, paths):
+        assert result_store.result_path(run_dir, cid) == path
+    for path in paths:
+        _assert_in_results(path, tmp_path)
+        _no_subdirs_under_results(path, tmp_path)

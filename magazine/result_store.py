@@ -11,9 +11,11 @@ Path convention
 ---------------
 ``<run_dir>/results/<safe_token>.txt`` where ``run_dir`` is the directory that
 owns the run's ``state.json`` / ``run.lock``.  ``<safe_token>`` is a single,
-*filename-safe* token derived from the logical ``cartridge_id`` so that a
-malformed or hostile ID cannot escape ``results/`` or create subdirectories.
-The token is additionally verified with the project's standard path-safety
+filename-safe, *collision-free* token derived from the logical
+``cartridge_id`` so that a malformed or hostile ID cannot escape ``results/``
+or create subdirectories, and so that two distinct ``cartridge_id``s cannot
+collapse to the same file.  The token is additionally verified with the project's
+standard path-safety
 primitive (``magazine.paths.resolve_contained_path``) so the derived path is
 guaranteed to stay inside the run-owned ``results/`` directory.
 
@@ -36,29 +38,45 @@ __all__ = ["result_path", "save_cartridge_result"]
 # hyphens.  Every other character (path separators, NUL, whitespace, ...) is
 # collapsed to a single underscore.  This leaves practical, safe Magazine
 # cartridge IDs byte-for-byte readable (one-to-one) while making any separator
-# a harmless part of a *single* path component.
+# a harmless part of a *single* path component.  The collapse is *not* injective
+# (``"a/b"`` and ``"a_b"`` both collapse to ``"a_b"``); this token is therefore
+# used only for readable, all-safe IDs, and :func:`_safe_file_name` fingerprints
+# the full ID in every other case so distinct IDs never collide.
 _SAFE_TOKEN_RE = re.compile(r"[^A-Za-z0-9._-]")
 
 
 def _safe_file_name(cartridge_id: str) -> str:
-    """Derive a single, deterministic, filename-safe token from a logical ID.
+    """Derive a single, deterministic, filename-safe *and collision-free*
+    token from a logical ID.
 
     The token contains no path separators and is never ``.`` / ``..`` / empty
     (the only single components that could traverse to a parent), so it cannot
-    escape ``results/`` or create subdirectories.  Practical, safe IDs are
-    returned unchanged (one-to-one, readable); the handful of inputs that would
-    otherwise yield ``.`` / ``..`` / the empty token fall back to a deterministic
-    SHA-256 prefix, preserving distinctness even for those edge cases.
+    escape ``results/`` or create subdirectories.  Two distinct ``cartridge_id``s
+    must never map to the same filename.
+
+    The character-collapse in ``_SAFE_TOKEN_RE`` is many-to-one (e.g. ``"a/b"``
+    and ``"a b"`` both collapse to ``"a_b"``), so it cannot be the sole
+    identifier.  This function therefore:
+
+    * If the ID is *already* a single, all-safe, non-trivial component
+      (``_SAFE_TOKEN_RE.sub("_", id) == id`` and not ``""`` / ``"."`` / ``".."``),
+      the token is returned unchanged: practical, safe cartridge IDs stay
+      byte-for-byte readable (``"cart-b"`` -> ``"cart-b.txt"``).
+    * For every other ID (unsafe separators/whitespace, or ``""`` / ``"."`` /
+      ``".."``), the token is the full SHA-256 fingerprint of the *original*
+      ID.  That is a single safe path component and is distinct for every
+      distinct ID, so no two results can overwrite one another.
 
     Returns
     -------
     str
-        A single safe file-name token (no separators; not ``.`` / ``..`` / empty).
+        A single safe file-name token (no separators; not ``.`` / ``..`` /
+        empty).  Distinct ``cartridge_id``s always yield distinct tokens.
     """
     token = _SAFE_TOKEN_RE.sub("_", cartridge_id)
-    if not token or token in (".", ".."):
-        token = hashlib.sha256(cartridge_id.encode("utf-8")).hexdigest()[:16]
-    return token
+    if token == cartridge_id and token not in ("", ".", ".."):
+        return token
+    return hashlib.sha256(cartridge_id.encode("utf-8")).hexdigest()
 
 
 def result_path(run_dir: str, cartridge_id: str) -> str:

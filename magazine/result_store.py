@@ -11,11 +11,13 @@ Path convention
 ---------------
 ``<run_dir>/results/<safe_token>.txt`` where ``run_dir`` is the directory that
 owns the run's ``state.json`` / ``run.lock``.  ``<safe_token>`` is a single,
-filename-safe, *collision-free* token derived from the logical
+filename-safe, *collision-resistant* token derived from the logical
 ``cartridge_id`` so that a malformed or hostile ID cannot escape ``results/``
 or create subdirectories, and so that two distinct ``cartridge_id``s cannot
-collapse to the same file.  The token is additionally verified with the project's
-standard path-safety
+collapse to the same file.  Unsafe IDs are fingerprinted into the reserved
+``__sha256__`` namespace (which no literal safe ID may occupy), so that a safe
+ID that happens to equal some ID's digest cannot collide with the hashed ID.  The
+token is additionally verified with the project's standard path-safety
 primitive (``magazine.paths.resolve_contained_path``) so the derived path is
 guaranteed to stay inside the run-owned ``results/`` directory.
 
@@ -38,45 +40,62 @@ __all__ = ["result_path", "save_cartridge_result"]
 # hyphens.  Every other character (path separators, NUL, whitespace, ...) is
 # collapsed to a single underscore.  This leaves practical, safe Magazine
 # cartridge IDs byte-for-byte readable (one-to-one) while making any separator
-# a harmless part of a *single* path component.  The collapse is *not* injective
-# (``"a/b"`` and ``"a_b"`` both collapse to ``"a_b"``); this token is therefore
-# used only for readable, all-safe IDs, and :func:`_safe_file_name` fingerprints
-# the full ID in every other case so distinct IDs never collide.
+# a harmless part of a *single* path component.  The collapse is *not*
+# injective (``"a/b"`` and ``"a_b"`` both collapse to ``"a_b"``); this token is
+# therefore used only for readable, all-safe IDs, and :func:`_safe_file_name`
+# fingerprints the full ID into the reserved ``__sha256__`` namespace in every
+# other case.
 _SAFE_TOKEN_RE = re.compile(r"[^A-Za-z0-9._-]")
+
+# Reserved namespace for fingerprinted result files.  Filenames of the form
+# ``__sha256__<hex>`` are always produced by :func:`_safe_file_name`'s hashing
+# branch; no literal, all-safe cartridge ID may return its token unchanged while
+# beginning with this prefix, otherwise a literal ID could occupy the hashed
+# namespace and collide with a hashed ID.
+_HASH_PREFIX = "__sha256__"
 
 
 def _safe_file_name(cartridge_id: str) -> str:
-    """Derive a single, deterministic, filename-safe *and collision-free*
+    """Derive a single, deterministic, filename-safe, *collision-resistant*
     token from a logical ID.
 
     The token contains no path separators and is never ``.`` / ``..`` / empty
     (the only single components that could traverse to a parent), so it cannot
-    escape ``results/`` or create subdirectories.  Two distinct ``cartridge_id``s
-    must never map to the same filename.
+    escape ``results/`` or create subdirectories.
 
-    The character-collapse in ``_SAFE_TOKEN_RE`` is many-to-one (e.g. ``"a/b"``
-    and ``"a b"`` both collapse to ``"a_b"``), so it cannot be the sole
-    identifier.  This function therefore:
+    The character-collapse in ``_SAFE_TOKEN_RE`` is many-to-one (e.g.
+    ``"a/b"`` and ``"a b"`` both collapse to ``"a_b"``), so it cannot be the
+    sole identifier.  Two result namespaces are used:
 
-    * If the ID is *already* a single, all-safe, non-trivial component
-      (``_SAFE_TOKEN_RE.sub("_", id) == id`` and not ``""`` / ``"."`` / ``".."``),
-      the token is returned unchanged: practical, safe cartridge IDs stay
-      byte-for-byte readable (``"cart-b"`` -> ``"cart-b.txt"``).
-    * For every other ID (unsafe separators/whitespace, or ``""`` / ``"."`` /
-      ``".."``), the token is the full SHA-256 fingerprint of the *original*
-      ID.  That is a single safe path component and is distinct for every
-      distinct ID, so no two results can overwrite one another.
+    * **Readable namespace.**  If the ID is *already* a single, all-safe,
+      non-trivial component *and does not use the reserved hash prefix*, the
+      token is returned unchanged: ordinary, safe cartridge IDs stay byte-for-
+      byte readable (``"cart-b"`` -> ``"cart-b.txt"``).
+    * **Reserved hash namespace.**  Every other ID -- unsafe separators/
+      whitespace, ``""`` / ``"."`` / ``".."``, or a literal ID that already
+      begins with ``_HASH_PREFIX`` -- is written as ``__sha256__`` followed by
+      the full SHA-256 fingerprint of the *original* ID.  SHA-256 is
+      collision-*resistant* (not provably collision-free), so a distinct ID is
+      distinct in practice; the ``__sha256__`` prefix additionally guarantees the
+      hashed namespace is exclusive: no literal safe ID can return a token that
+      equals a hash (they all begin with ``__sha256__``), so a safe ID that
+      happens to equal some ID's digest never collides with the hashed ID.
 
     Returns
     -------
     str
         A single safe file-name token (no separators; not ``.`` / ``..`` /
-        empty).  Distinct ``cartridge_id``s always yield distinct tokens.
+        empty).  Distinct ``cartridge_id``s yield distinct tokens.
     """
     token = _SAFE_TOKEN_RE.sub("_", cartridge_id)
-    if token == cartridge_id and token not in ("", ".", ".."):
+    readable = (
+        token == cartridge_id
+        and token not in ("", ".", "..")
+        and not token.startswith(_HASH_PREFIX)
+    )
+    if readable:
         return token
-    return hashlib.sha256(cartridge_id.encode("utf-8")).hexdigest()
+    return _HASH_PREFIX + hashlib.sha256(cartridge_id.encode("utf-8")).hexdigest()
 
 
 def result_path(run_dir: str, cartridge_id: str) -> str:

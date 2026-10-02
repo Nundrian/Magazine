@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pytest
 
+import hashlib
 import os
 
 from magazine import result_store
@@ -366,3 +367,84 @@ def test_mixed_safe_and_unsafe_ids_never_collide(tmp_path: Path) -> None:
     for path in paths:
         _assert_in_results(path, tmp_path)
         _no_subdirs_under_results(path, tmp_path)
+
+
+# --- cross-namespace: the reserved __sha256__ namespace must be exclusive ---
+
+
+def test_unsafe_id_and_literal_digest_id_do_not_collide(tmp_path: Path) -> None:
+    """Cross-namespace regression (pre-fix): an unsafe ID U hashed to a bare
+    64-hex digest collided with the literal safe ID that is exactly that
+    digest.  With the reserved ``__sha256__`` namespace the two must resolve
+    to different files, both persisting independently."""
+    run_dir = str(tmp_path)
+    unsafe_id = "a/b"
+    digest = hashlib.sha256(unsafe_id.encode("utf-8")).hexdigest()
+    assert len(digest) == 64 and digest.isalnum()  # a valid literal safe ID
+
+    p_unsafe = result_store.result_path(run_dir, unsafe_id)
+    p_digest = result_store.result_path(run_dir, digest)
+
+    # The unsafe ID is fingerprinted into the reserved namespace.
+    assert Path(p_unsafe).name.startswith("__sha256__")
+    assert Path(p_unsafe).name == "__sha256__" + digest + ".txt"
+    # The digest itself is an ordinary safe ID and stays readable.
+    assert Path(p_digest).name == digest + ".txt"
+    # They must no longer collide.
+    assert p_unsafe != p_digest
+
+    # Both results survive independently, byte-exact.
+    payloads = {unsafe_id: "unsafe-payload", digest: "digest-payload"}
+    for cid in (unsafe_id, digest):
+        result_store.save_cartridge_result(run_dir, cid, payloads[cid])
+    assert Path(p_unsafe).read_bytes() == payloads[unsafe_id].encode("utf-8")
+    assert Path(p_digest).read_bytes() == payloads[digest].encode("utf-8")
+    assert set((tmp_path / "results").iterdir()) == {Path(p_unsafe), Path(p_digest)}
+
+
+def test_literal_reserved_prefix_id_is_reencoded_and_distinct(tmp_path: Path) -> None:
+    """A literal, all-safe ID that begins with the reserved ``__sha256__``
+    prefix must itself be fingerprinted (not returned unchanged), so it cannot
+    occupy the hashed namespace and collide with the hash of another ID."""
+    run_dir = str(tmp_path)
+    unsafe_id = "a/b"
+    digest = hashlib.sha256(unsafe_id.encode("utf-8")).hexdigest()
+    reserved_literal = "__sha256__" + digest  # a valid safe cartridge ID
+
+    p_unsafe = result_store.result_path(run_dir, unsafe_id)
+    p_literal = result_store.result_path(run_dir, reserved_literal)
+
+    # The reserved-prefix literal is re-encoded, never returned verbatim.
+    assert Path(p_literal).name != reserved_literal + ".txt"
+    assert Path(p_literal).name.startswith("__sha256__")
+    # It must not collide with the unsafe ID's hash (the new failure mode).
+    assert p_unsafe != p_literal
+    assert Path(p_unsafe).name != Path(p_literal).name
+
+    # Both results survive independently, byte-exact.
+    payloads = {unsafe_id: "unsafe-payload", reserved_literal: "reserved-lit-payload"}
+    for cid in (unsafe_id, reserved_literal):
+        result_store.save_cartridge_result(run_dir, cid, payloads[cid])
+    assert Path(p_unsafe).read_bytes() == payloads[unsafe_id].encode("utf-8")
+    assert Path(p_literal).read_bytes() == payloads[reserved_literal].encode("utf-8")
+    assert set((tmp_path / "results").iterdir()) == {Path(p_unsafe), Path(p_literal)}
+
+
+def test_original_ab_vs_ab_still_fixed_and_safe_ids_unchanged(tmp_path: Path) -> None:
+    """Guard: the original ``a/b`` vs ``a_b`` collision remains fixed, ordinary
+    safe IDs keep their readable filenames, and all results persist."""
+    run_dir = str(tmp_path)
+    ids = ("a/b", "a_b", "cart-b", "job.1")
+    paths = [result_store.result_path(run_dir, cid) for cid in ids]
+    assert len(set(paths)) == len(ids)
+    # ordinary safe IDs are untouched.
+    assert Path(paths[2]).name == "cart-b.txt"
+    assert Path(paths[3]).name == "job.1.txt"
+    # the unsafe ID is in the reserved namespace.
+    assert Path(paths[0]).name.startswith("__sha256__")
+    payloads = {cid: "payload-for-" + cid.replace("/", "-") for cid in ids}
+    for cid in ids:
+        result_store.save_cartridge_result(run_dir, cid, payloads[cid])
+    for cid, path in zip(ids, paths):
+        assert Path(path).read_bytes() == payloads[cid].encode("utf-8")
+    assert set((tmp_path / "results").iterdir()) == {Path(p) for p in paths}

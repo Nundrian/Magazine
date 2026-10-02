@@ -1,44 +1,12 @@
-"""Stage-1 composition for Magazine: a minimal synchronous CLI adapter that
-prepares a run for cartridge execution.
+"""Synchronous CLI adapter for Magazine run preparation.
 
-Composition sequence (only the existing tested modules are used):
+The CLI loads and validates a Magazine document or unpacked package, creates
+the run directory when needed and performs atomic first run admission.  It does
+not dispatch cartridges; full execution is provided by
+``magazine.async_runner.run_magazine`` / ``run_magazine_open_webui``.
 
-  1. Read the Magazine JSON document (--magazine) as UTF-8.
-  2. Validate it via magazine.schema (strict JSON + schema_version +
-     cartridges).  Validation happens before any filesystem side effect.
-  3. Create --state-dir/run/ (the state store never creates parent
-     directories, so this is the one mkdir).
-  4. Atomic admission via
-     magazine.run_action.persist_admit_run(state_path, lock_path, owner_id,
-     cartridge_ids): it acquires the run lock before checking the state file,
-     creates the state file as a fresh READY only when missing (still under
-     that lock), branches on the freshly-loaded status (READY -> RUNNING;
-     COMPLETED/HALTED returned unchanged; RUNNING -> RunAdmissionError), and
-     releases the lock before returning.
-
-    Steps 1-4 (plus the one-time derivation of state_path/lock_path) are
-    centralized in the shared magazine.run_preparation module, which this
-    synchronous CLI adapter and a future async runner both consume via
-    prepare_run(magazine_path, state_dir, owner_id) -> PreparedRun.  The
-    entrypoint itself acquires no run lock; the admission lock is held only
-    for the duration of the admission, so a later stage's runner can run only
-    after it has been released.
-
-  5. Branch on the status in PreparedRun.state returned by admission:
-       RUNNING     -> exit 0 (run prepared)
-       COMPLETED   -> exit 0 (nothing to do)
-       HALTED      -> exit 0 (nothing to do)
-       RunAdmissionError (already RUNNING, no lock held) -> exit 1 (needs
-       explicit recovery via the recovery action API in a later stage)
-       MagazineLockError (an existing lock held by another process) -> exit
-       1 (nothing was changed, no retry, no polling, no lock deletion)
-
-When admission returns RUNNING the persisted state has a current cartridge,
-which is exactly what stage-2 cartridge execution dispatches.  This
-entrypoint performs no dispatch, makes no Open WebUI calls, and creates no
-state files outside --state-dir/run/.
-
-Exit codes: 0 on success (run prepared, or nothing to do); 1 on any error.
+Exit codes: 0 on successful preparation or an already terminal run; 1 on any
+error.
 """
 
 from __future__ import annotations
@@ -64,7 +32,7 @@ def _prepare(magazine_path: str, state_dir: str, owner_id: str) -> int:
     Magazine load, schema validation, run-directory creation, and the atomic
     first-run admission (including the one-time derivation of ``state_path``
     / ``lock_path``) are delegated to the shared
-    :mod:`magazine.run_preparation` module so a future async runner does not
+    :mod:`magazine.run_preparation` module so the async runner does not
     depend on a private CLI helper and so paths are derived exactly once.
     This layer only maps the returned
     :class:`magazine.run_preparation.PreparedRun` onto the existing CLI output
@@ -125,7 +93,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--magazine",
         required=True,
-        help="Path to the Magazine JSON document",
+        help="Path to a Magazine document (JSON file or unpacked folder)",
     )
     parser.add_argument(
         "--state-dir",

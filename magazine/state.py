@@ -132,7 +132,7 @@ def validate_run_state(state: Any) -> dict[str, Any]:
     ``current=<id>`` are valid.
 
     ``revision`` is a non-negative integer: it starts at 0 in a fresh run,
-    increments by exactly one on each ``begin_next_cartridge`` / 
+    increments by exactly one on each ``begin_next_cartridge`` /
     ``complete_current_cartridge`` transition, and is otherwise preserved
     unchanged.
     """

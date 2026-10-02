@@ -1,4 +1,4 @@
-"""Stage-3 post-dispatch completion composition for Magazine.
+"""Guarded post-dispatch completion composition for Magazine.
 
 Thin composition layer that records the *successful* completion of the
 current cartridge after :mod:`magazine.execute.dispatch_current_cartridge`
@@ -20,7 +20,7 @@ re-implements none of that logic.
 * the ``revision`` increment
 * the atomic save
 
-It only adds a single well-named boundary that a Stage 4 execution loop
+It only adds a single well-named boundary that a execution loop
 can call after a successful dispatch.
 
 Nothing here dispatches a cartridge, begins the next cartridge, adds a loop,

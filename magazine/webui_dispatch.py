@@ -2,7 +2,7 @@
 
 Factory that produces an async ``dispatch(prompt, model_id)`` callable
 returning the final assistant response text, following the proven
-Open WebUI request sequence documented in ``magazine.fresh_chat_proof``:
+Open WebUI fresh-chat request sequence:
 
   1. create a fresh saved chat;
   2. submit a completion using the supplied ``model_id``;
@@ -172,11 +172,7 @@ def make_open_webui_dispatch(
             "model": model_id,
             "stream": True,
             "session_id": session_id,
-            "tools": [],
             "features": {
-                "web_search": False,
-                "code_interpreter": False,
-                "image_generation": False,
                 "memory": False,
             },
             "background_tasks": {

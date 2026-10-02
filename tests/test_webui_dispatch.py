@@ -146,6 +146,10 @@ def test_requested_model_id_reaches_open_webui_request(monkeypatch):
     assert comp["model"] == MODEL_A
     assert comp["chat_id"] == CHAT_ID
     assert comp["messages"][0]["content"] == PROMPT
+    # Memory isolation is explicit; normal harness tools remain its responsibility.
+    assert "tools" not in comp
+    assert "tool_ids" not in comp
+    assert comp["features"] == {"memory": False}
     # --- 3. shared Open WebUI headers on every request ----------------------
     for call in client.calls:
         assert call["headers"]["Authorization"] == f"Bearer {API_KEY}"

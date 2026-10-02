@@ -2,12 +2,12 @@
 
 Centralizes the composition that the entrypoint used to own directly.  This
 module is neutral and shared: both the synchronous CLI adapter
-(:mod:`magazine.entrypoint`) and a future async runner consume
+(:mod:`magazine.entrypoint`) and the async runner consume
 :func:`prepare_run`, so that
 
   * two composition layers do not independently reconstruct ``state_path`` /
     ``lock_path``;
-  * the future async runner does not depend on a private CLI helper;
+  * the async runner does not depend on a private CLI helper;
   * ``state`` and the lock path are handed out once, so the runner never
     re-derives paths or re-reads state between admission and dispatch.
 
@@ -61,7 +61,8 @@ def prepare_run(
     """Load, validate, and admit a first run; return a :class:`PreparedRun`.
 
     Args:
-        magazine_path: Path to the Magazine JSON document.
+        magazine_path: Path to a Magazine document (JSON file or unpacked
+            Magazine folder).
         state_dir: Directory containing the run/ state subdirectory.
         owner_id: Owner ID written into the run lock.
 
@@ -85,9 +86,12 @@ def prepare_run(
 
     # 1. Load the magazine document through the single loading boundary.
     #    Strict-JSON parsing and schema validation happen inside the boundary,
-    #    before any filesystem side effect here.
-    magazine_doc = document.load_document(magazine_path)
-    cartridge_ids = [c["id"] for c in magazine_doc["cartridges"]]
+    #    before any filesystem side effect here.  For an unpacked folder the
+    #    boundary also returns the immutable execution plan; the compatibility
+    #    document (`.document`) drives the once-derived cartridge IDs, exactly
+    #    as before, so admission is unchanged.
+    magazine_load = document.load_document(magazine_path)
+    cartridge_ids = [c["id"] for c in magazine_load.document["cartridges"]]
 
     # 2. Prepare the state directory.
     run_dir = Path(state_dir) / "run"

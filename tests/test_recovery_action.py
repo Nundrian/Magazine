@@ -184,15 +184,15 @@ HALTED_NO_CURRENT = {
 }
 
 
-def test_halted_persisted_as_running_by_recovery(tmp_path):
+def test_halted_persisted_as_ready_by_recovery(tmp_path):
     state_path, lock_path = make_paths(tmp_path)
     write_json(state_path, HALTED)
     recovered = persist_recover_halted(state_path, lock_path, "owner-1")
     assert read_json(state_path) == {
         "done": ["cart-1"],
-        "current": "cart-2",
-        "todo": ["cart-3"],
-        "status": "RUNNING",
+        "current": None,
+        "todo": ["cart-2", "cart-3"],
+        "status": "READY",
         "revision": 3,
     }
     assert recovered == read_json(state_path)
@@ -211,11 +211,13 @@ def test_done_ordering_and_values_preserved_exactly_by_recovery_persistence(tmp_
     assert read_json(state_path)["done"] == ["cart-a", "cart-b", "cart-c"]
 
 
-def test_current_id_preserved_exactly_by_recovery_persistence(tmp_path):
+def test_interrupted_cartridge_moved_to_front_of_todo_by_recovery_persistence(tmp_path):
     state_path, lock_path = make_paths(tmp_path)
     write_json(state_path, HALTED)
     persist_recover_halted(state_path, lock_path, "owner-1")
-    assert read_json(state_path)["current"] == "cart-2"
+    persisted = read_json(state_path)
+    assert persisted["current"] is None
+    assert persisted["todo"] == ["cart-2", "cart-3"]
 
 
 def test_todo_ordering_and_values_preserved_exactly_by_recovery_persistence(tmp_path):
@@ -228,7 +230,8 @@ def test_todo_ordering_and_values_preserved_exactly_by_recovery_persistence(tmp_
         "revision": 2,
     })
     persist_recover_halted(state_path, lock_path, "owner-1")
-    assert read_json(state_path)["todo"] == ["cart-3", "cart-4", "cart-5"]
+    # the interrupted cart-2 is prepended; the rest keep their order.
+    assert read_json(state_path)["todo"] == ["cart-2", "cart-3", "cart-4", "cart-5"]
 
 
 def test_revision_increments_by_one_by_recovery_persistence(tmp_path):
@@ -315,7 +318,8 @@ def test_owner_id_passed_unchanged_to_lock_by_recovery(tmp_path):
          patch("magazine.recovery_action.release_run_lock") as release, \
          patch("magazine.recovery_action.load_run_state", return_value=HALTED), \
          patch("magazine.recovery_action.recover_halted_run",
-               return_value={**HALTED, "status": "RUNNING", "revision": 2}), \
+               return_value={**HALTED, "current": None, "status": "READY",
+               "revision": 3, "todo": ["cart-2", "cart-3"]}), \
          patch("magazine.recovery_action.save_run_state"):
         persist_recover_halted(state_path, lock_path, owner)
     acquire.assert_called_once_with(lock_path, owner)
@@ -331,7 +335,9 @@ def test_call_order_by_recovery(tmp_path):
          patch("magazine.recovery_action.load_run_state",
                side_effect=lambda *a, **k: (calls.append("load"), HALTED)[1]), \
          patch("magazine.recovery_action.recover_halted_run",
-               side_effect=lambda *a, **k: (calls.append("recover"), {**HALTED, "status": "RUNNING", "revision": 2})[1]), \
+               side_effect=lambda *a, **k: (calls.append("recover"),
+               {**HALTED, "current": None, "status": "READY", "revision": 3,
+               "todo": ["cart-2", "cart-3"]})[1]), \
          patch("magazine.recovery_action.save_run_state",
                side_effect=lambda *a, **k: calls.append("save")), \
          patch("magazine.recovery_action.release_run_lock",

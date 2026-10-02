@@ -2,7 +2,15 @@
 
 Covers ``magazine.recovery_transition.halt_uncertain_run`` (RUNNING ->
 HALTED) and ``magazine.recovery_transition.recover_halted_run`` (HALTED ->
-RUNNING) plus ``magazine.recovery_transition.RecoveryTransitionError``.
+READY) plus ``magazine.recovery_transition.RecoveryTransitionError``.
+
+``recover_halted_run`` is the re-admissible inverse of ``halt_uncertain_run``:
+it restores an explicitly HALTED run to a ``READY`` state so the normal public
+runner (``magazine.async_runner.run_magazine``) can re-admit it via the existing
+admission path.  The interrupted ``current`` cartridge is moved to the front of
+the ``todo`` queue (so it is retried before the remaining work), ``current``
+is cleared, the status becomes ``READY``, and ``revision`` is incremented by
+exactly one.
 """
 
 from __future__ import annotations
@@ -166,7 +174,7 @@ def test_completed_is_rejected() -> None:
         halt_uncertain_run(state)
 
 
-def test_halted_is_rejected() -> None:
+def test_halted_is_rejected_by_halt() -> None:
     state = {
         "done": ["cart-1"],
         "current": "cart-2",
@@ -193,7 +201,7 @@ def test_malformed_state_propagates_validation_error() -> None:
 
 
 # ---------------------------------------------------------------------------
-# TestRecoverHaltedRun
+# TestRecoverHaltedRun (HALTED -> READY, re-admissible)
 # ---------------------------------------------------------------------------
 
 class TestRecoverHaltedRun:
@@ -206,15 +214,18 @@ class TestRecoverHaltedRun:
             "revision": revision,
         }
 
-    def test_halted_state_becomes_running(self):
+    def test_halted_state_becomes_ready(self):
         """A valid HALTED state with a current cartridge transitions to
-        RUNNING, with ``done``, ``current`` and ``todo`` preserved."""
+        READY (re-admissible), with ``done`` preserved, ``current`` cleared
+        to ``None``, the interrupted cartridge moved to the front of ``todo``
+        (preserving its position before the remaining queue), and ``revision``
+        incremented by exactly one."""
         result = recover_halted_run(self._halted_state())
         assert result == {
             "done": ["cart-1"],
-            "current": "cart-2",
-            "todo": ["cart-3", "cart-4"],
-            "status": STATUS_RUNNING,
+            "current": None,
+            "todo": ["cart-2", "cart-3", "cart-4"],
+            "status": STATUS_READY,
             "revision": 3,
         }
 
@@ -230,14 +241,18 @@ class TestRecoverHaltedRun:
         result = recover_halted_run(state)
         assert result["done"] == ["cart-a", "cart-b", "cart-c"]
 
-    def test_current_id_preserved_exactly_by_recover(self):
-        """Recovery preserves the interrupted ``current`` cartridge exactly,
-        so the execution path retries the same cartridge."""
+    def test_interrupted_cartridge_moved_to_front_of_todo_by_recover(self):
+        """The interrupted ``current`` cartridge becomes the head of the
+        ``todo`` queue (so the public runner's admission begins it first);
+        ``current`` itself is cleared (a READY state cannot have a current)."""
         result = recover_halted_run(self._halted_state())
-        assert result["current"] == "cart-2"
+        assert result["current"] is None
+        assert result["todo"][0] == "cart-2"
+        assert result["todo"] == ["cart-2", "cart-3", "cart-4"]
 
     def test_todo_ordering_and_values_preserved_exactly_by_recover(self):
-        """Recovery preserves the ``todo`` list exactly: order and values."""
+        """Recovery preserves the remaining ``todo`` order exactly after the
+        interrupted cartridge is prepended to the queue."""
         state = {
             "done": ["cart-1"],
             "current": "cart-2",
@@ -246,11 +261,12 @@ class TestRecoverHaltedRun:
             "revision": 2,
         }
         result = recover_halted_run(state)
-        assert result["todo"] == ["cart-3", "cart-4", "cart-5"]
+        assert result["todo"] == ["cart-2", "cart-3", "cart-4", "cart-5"]
 
-    def test_last_cartridge_halted_run_recoverable(self):
+    def test_last_cartridge_halted_run_recovers_to_ready_with_last_in_todo(self):
         """A HALTED run interrupted on its last cartridge (empty ``todo``)
-is recoverable to RUNNING with an empty ``todo``."""
+        is recoverable to READY with the interrupted cartridge as the single
+        remaining ``todo`` item."""
         state = {
             "done": ["cart-1"],
             "current": "cart-2",
@@ -261,9 +277,9 @@ is recoverable to RUNNING with an empty ``todo``."""
         result = recover_halted_run(state)
         assert result == {
             "done": ["cart-1"],
-            "current": "cart-2",
-            "todo": [],
-            "status": STATUS_RUNNING,
+            "current": None,
+            "todo": ["cart-2"],
+            "status": STATUS_READY,
             "revision": 2,
         }
 
@@ -321,7 +337,9 @@ is recoverable to RUNNING with an empty ``todo``."""
         assert state["todo"] == ["cart-3", "cart-4"]
 
     def test_returned_state_passes_validate_run_state_by_recover(self):
-        """A recovered state is a valid run state on its own terms."""
+        """A recovered READY state is a valid run state on its own terms (a
+        READY state with a non-empty completed history and a non-empty queue
+        is contractually legal)."""
         result = recover_halted_run(self._halted_state())
         assert validate_run_state(result) is result
 
@@ -361,9 +379,8 @@ is recoverable to RUNNING with an empty ``todo``."""
 
     def test_halted_without_current_rejected_by_recover(self):
         """A HALTED state with no ``current`` cartridge has no interrupted
-        work position to retry; recovering it would produce an invalid
-        RUNNING state (RUNNING requires a current cartridge), so it is
-        rejected explicitly."""
+        work position to retry; recovering it would put nothing at the front
+        of the queue for admission to begin, so it is rejected explicitly."""
         state = {
             "done": ["cart-1"],
             "current": None,

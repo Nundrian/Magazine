@@ -3,7 +3,7 @@
 Explicit recovery actions must safely persist:
 
     RUNNING -> HALTED
-    HALTED  -> RUNNING
+    HALTED  -> READY
 
 without racing another Magazine process.  Each recovery action acquires the
 existing run lock **before** loading or changing persisted state, so the
@@ -89,7 +89,7 @@ def persist_uncertain_halt(state_path: str, lock_path: str, owner_id: str) -> di
 
 
 def persist_recover_halted(state_path: str, lock_path: str, owner_id: str) -> dict:
-    """Persist the ``HALTED -> RUNNING`` recovery for an explicitly halted run.
+    """Persist the ``HALTED -> READY`` recovery for an explicitly halted run.
 
     The run lock is acquired first and the persisted state is only loaded
     after the lock is held.  The loaded state is transitioned with
@@ -98,10 +98,12 @@ def persist_recover_halted(state_path: str, lock_path: str, owner_id: str) -> di
     persistence, and is also released if loading, the transition, or the
     persistence raises.
 
-    The recovered run is positioned so that the existing execution path
-    (:func:`magazine.run_loop.run_all_cartridges`) retries the interrupted
-    cartridge: the state's ``current`` is preserved and no ``begin_next_cartridge``
-    is invoked.
+    The recovered run is re-admissible: it is persisted as ``READY`` with
+    ``current`` cleared to ``None`` and the interrupted cartridge moved to the
+    front of the ``todo`` queue, so the normal public runner
+    (:func:`magazine.async_runner.run_magazine`) re-admits it through the
+    existing admission path (:func:`magazine.run_action.persist_admit_run`),
+    which begins the interrupted cartridge.
 
     Args:
         state_path: Path to the persisted run state file.
@@ -109,7 +111,7 @@ def persist_recover_halted(state_path: str, lock_path: str, owner_id: str) -> di
         owner_id: Owner ID passed unchanged to lock acquisition and release.
 
     Returns:
-        The exact ``RUNNING`` state that was successfully persisted.
+        The exact ``READY`` state that was successfully persisted.
 
     Raises:
         :class:`magazine.run_lock.MagazineLockError`: if the lock cannot be
@@ -135,7 +137,7 @@ def persist_recover_halted(state_path: str, lock_path: str, owner_id: str) -> di
         recovered = recover_halted_run(state)
         # 4. Persist atomically.
         save_run_state(state_path, recovered)
-        # 5. Return the exact RUNNING state that was successfully persisted.
+        # 5. Return the exact READY state that was successfully persisted.
         return recovered
     finally:
         # 6. Release the same lock with the same owner_id, whether the

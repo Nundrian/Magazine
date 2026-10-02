@@ -9,6 +9,13 @@ Open WebUI fresh-chat request sequence:
   3. poll until the server task finishes;
   4. retrieve the saved chat and read the assistant response.
 
+Optional ``tool_ids`` are Open WebUI tool DB IDs already selected by the
+surrounding harness/operator.  Magazine carries them verbatim into the
+completion request as ``tool_ids``; Open WebUI resolves them into the tools
+available in each fresh chat.  Magazine never discovers, provisions, inspects
+or manages tools.  When omitted, no tool IDs are sent and the previous
+behaviour is preserved.
+
 ``base_url`` and ``api_key`` are supplied to the factory and are used for
 every request.  A second set of credentials is never resolved from the
 environment.
@@ -29,6 +36,25 @@ from urllib.parse import urlsplit
 import httpx
 
 __all__ = ["make_open_webui_dispatch"]
+
+
+def _normalize_tool_ids(raw) -> tuple:
+    """Validate *raw* and return an immutable copy of the supplied tool IDs.
+
+    Returns an empty tuple when *raw* is ``None``.  Non-empty list/tuple
+    inputs must contain only non-empty strings; anything else raises a
+    ``ValueError`` before any HTTP request is made.
+    """
+    if raw is None:
+        return ()
+    if not isinstance(raw, (list, tuple)):
+        raise ValueError(
+            f"tool_ids must be a list or tuple of non-empty strings, got {type(raw).__name__}"
+        )
+    for tool_id in raw:
+        if not isinstance(tool_id, str) or not tool_id.strip():
+            raise ValueError("tool_ids must contain only non-empty string IDs")
+    return tuple(raw)
 
 
 def _normalize_base_url(raw: str) -> str:
@@ -95,6 +121,7 @@ def make_open_webui_dispatch(
     base_url: str,
     api_key: str,
     *,
+    tool_ids: list | tuple | None = None,
     timeout: float = 30.0,
     wait_timeout: float = 600.0,
     poll_interval: float = 2.0,
@@ -105,6 +132,13 @@ def make_open_webui_dispatch(
     Args:
         base_url: Absolute http(s) base URL of the Open WebUI instance.
         api_key: Bearer API key used for every request.
+        tool_ids: Optional sequence of Open WebUI tool DB IDs already
+            selected by the surrounding harness/operator, e.g. a list
+            of ``"development_toolkit"``.  Magazine forwards them verbatim
+            to each completion request as ``tool_ids``; Open WebUI resolves
+            them into the tools actually available in each fresh chat.
+            Magazine does not query, resolve or manage tools.  When omitted,
+            no tool IDs are sent and the previous behaviour is preserved.
         timeout: Per-request timeout in seconds.
         wait_timeout: Seconds to wait for the server task to finish.
         poll_interval: Seconds between task polls.
@@ -114,12 +148,13 @@ def make_open_webui_dispatch(
         and returning the saved assistant response text (str).
 
     Raises:
-        ValueError: If *base_url* or *api_key* is not usable at factory
-            creation time.
+        ValueError: If *base_url*, *api_key* or *tool_ids* is not usable
+            at factory creation time.
     """
     base_url = _normalize_base_url(base_url)
     if not isinstance(api_key, str) or not api_key.strip():
         raise ValueError("api_key must be a non-empty string")
+    tool_ids = _normalize_tool_ids(tool_ids)
 
     async def dispatch(prompt: str, model_id: str) -> str:
         """Run one proven Open WebUI flow for *prompt* with *model_id*."""
@@ -181,6 +216,8 @@ def make_open_webui_dispatch(
                 "follow_up_generation": False,
             },
         }
+        if tool_ids:
+            completion_body["tool_ids"] = list(tool_ids)
 
         async with httpx.AsyncClient(timeout=timeout) as client:
             # --- 1. create one fresh saved chat ----------------------------

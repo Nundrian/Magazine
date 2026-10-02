@@ -47,9 +47,18 @@ async def run_magazine_open_webui(
     base_url: str,
     api_key: str,
     model_map: dict,
+    tool_ids: list | tuple | None = None,
 ) -> dict:
-    """Run Magazine using the Open WebUI fresh-chat dispatch adapter."""
-    dispatch = make_open_webui_dispatch(base_url, api_key)
+    """Run Magazine using the Open WebUI fresh-chat dispatch adapter.
+
+    *tool_ids* is an optional sequence of Open WebUI tool DB IDs already
+    selected by the surrounding harness/operator.  It is forwarded to the
+    dispatch factory and appears in each completion request as ``tool_ids``;
+    Open WebUI resolves them into the tools available in each fresh chat.
+    Magazine does not discover, provision, inspect or manage tools.  When
+    omitted, no tool IDs are sent and the previous behaviour is preserved.
+    """
+    dispatch = make_open_webui_dispatch(base_url, api_key, tool_ids=tool_ids)
     return await run_magazine(
         magazine_path=magazine_path,
         state_dir=state_dir,

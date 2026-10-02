@@ -121,9 +121,9 @@ def _responses(model_id, active_polls=0):
     ]
 
 
-def _dispatch(monkeypatch, client):
+def _dispatch(monkeypatch, client, tool_ids=None):
     monkeypatch.setattr(webui_dispatch.httpx, "AsyncClient", lambda *a, **kw: client)
-    return make_open_webui_dispatch(BASE_URL, API_KEY)
+    return make_open_webui_dispatch(BASE_URL, API_KEY, tool_ids=tool_ids)
 
 
 def test_requested_model_id_reaches_open_webui_request(monkeypatch):
@@ -146,7 +146,8 @@ def test_requested_model_id_reaches_open_webui_request(monkeypatch):
     assert comp["model"] == MODEL_A
     assert comp["chat_id"] == CHAT_ID
     assert comp["messages"][0]["content"] == PROMPT
-    # Memory isolation is explicit; normal harness tools remain its responsibility.
+    # Memory isolation is explicit; no tool context is supplied in this
+    # case.  Normal harness tools remain its responsibility.
     assert "tools" not in comp
     assert "tool_ids" not in comp
     assert comp["features"] == {"memory": False}
@@ -299,6 +300,59 @@ def test_dispatch_requires_non_empty_prompt_and_model_id(monkeypatch):
         asyncio.run(dispatch("", MODEL_A))
     with pytest.raises(ValueError, match="model_id"):
         asyncio.run(dispatch(PROMPT, "  "))
+
+
+def test_supplied_tool_ids_appear_in_completion_request(monkeypatch):
+    """Harness-selected tool IDs are carried verbatim into the completion body."""
+    _pin_ids(monkeypatch)
+    client = _FakeClient(_responses(MODEL_A))
+    dispatch = _dispatch(monkeypatch, client, tool_ids=["development_toolkit"])
+    asyncio.run(dispatch(PROMPT, MODEL_A))
+    comp = client.calls[1]["body"]
+    assert comp["tool_ids"] == ["development_toolkit"]
+    # Tool context is not injected into the fresh-chat creation body.
+    assert "tool_ids" not in client.calls[0]["body"]["chat"]
+
+
+def test_multiple_tool_ids_preserve_order_and_values(monkeypatch):
+    """Caller-supplied order and values are preserved through dispatch."""
+    _pin_ids(monkeypatch)
+    supplied = ["alpha_toolkit", "development_toolkit", "beta_toolkit"]
+    client = _FakeClient(_responses(MODEL_A))
+    dispatch = _dispatch(monkeypatch, client, tool_ids=tuple(supplied))
+    asyncio.run(dispatch(PROMPT, MODEL_A))
+    assert client.calls[1]["body"]["tool_ids"] == supplied
+
+
+def test_dispatch_uses_internal_immutable_copy_of_tool_ids(monkeypatch):
+    """A later mutation of the caller's list must not affect dispatch."""
+    _pin_ids(monkeypatch)
+    supplied = ["development_toolkit"]
+    client = _FakeClient(_responses(MODEL_A))
+    dispatch = _dispatch(monkeypatch, client, tool_ids=supplied)
+    supplied.append("spoiled")
+    supplied[0] = "spoiled"
+    supplied.append("spoiled")
+    asyncio.run(dispatch(PROMPT, MODEL_A))
+    assert client.calls[1]["body"]["tool_ids"] == ["development_toolkit"]
+
+
+def test_empty_tool_ids_send_no_tool_ids_field(monkeypatch):
+    """An empty sequence is equivalent to omitting tool IDs."""
+    _pin_ids(monkeypatch)
+    client = _FakeClient(_responses(MODEL_A))
+    dispatch = _dispatch(monkeypatch, client, tool_ids=[])
+    asyncio.run(dispatch(PROMPT, MODEL_A))
+    assert "tool_ids" not in client.calls[1]["body"]
+
+
+def test_tool_ids_validation_fails_before_http(monkeypatch):
+    """Invalid tool IDs are rejected at factory creation, before any HTTP."""
+    client = _FakeClient([])
+    for bad in (5, ["ok", ""], [123], [["nested"]], "dev_toolkit", {}, [None]):
+        with pytest.raises(ValueError, match="tool_ids"):
+            dispatch = _dispatch(monkeypatch, client, tool_ids=bad)
+    assert client.calls == []
 
 
 if __name__ == "__main__":

@@ -78,6 +78,9 @@ async def main():
             "concise": "YOUR_FIRST_MODEL_ID",
             "reasoning": "YOUR_SECOND_MODEL_ID",
         },
+        # Optional: Open WebUI tool DB IDs already chosen by the
+        # surrounding harness/operator, e.g. the Development Toolkit:
+        # tool_ids=["development_toolkit"],
     )
 
 print(asyncio.run(main()))
@@ -85,7 +88,7 @@ print(asyncio.run(main()))
 
 Supply real credentials at runtime. The adapter creates a distinct saved chat, user/assistant message IDs and session ID for each cartridge. Each completion contains only that cartridge's user prompt and assigned model. It explicitly requests `features.memory = false`; conversational messages and earlier results are never handed to the next cartridge. Chat title, tag and follow-up background tasks remain disabled as in the base version.
 
-Magazine sends no tool list, tool IDs or terminal selection. Availability of the harness's ordinary tools and enforcement of the memory flag need confirmation on the deployed Open WebUI installation; mocked request tests cannot establish server behaviour.
+Optional `tool_ids` carries the harness-selected Open WebUI tool DB IDs (e.g. `tool_ids=["development_toolkit"]`). Magazine forwards those IDs verbatim into each completion request as `"tool_ids"`; Open WebUI resolves them into the tools available in the fresh chat. Magazine does not discover, provision, inspect or manage tools. When `tool_ids` is omitted (or empty), no tool IDs are sent and the previous behaviour is preserved. Availability of the harness's ordinary tools and enforcement of the memory flag need confirmation on the deployed Open WebUI installation; mocked request tests cannot establish server behaviour.
 
 Neither supplied adapter deletes its saved chat after execution. Saved server chats remain, but their contexts are never reused for another cartridge. Explicit server-side deletion is a remaining bounded lifecycle task, after confirming a supported API. No deletion endpoint has been guessed or added.
 

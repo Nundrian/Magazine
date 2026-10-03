@@ -18,6 +18,8 @@ import pytest
 import hashlib
 import os
 
+import magazine.durability as durability
+
 from magazine import result_store
 
 
@@ -448,3 +450,130 @@ def test_original_ab_vs_ab_still_fixed_and_safe_ids_unchanged(tmp_path: Path) ->
     for cid, path in zip(ids, paths):
         assert Path(path).read_bytes() == payloads[cid].encode("utf-8")
     assert set((tmp_path / "results").iterdir()) == {Path(p) for p in paths}
+
+
+# --- crash-durability protocol (fsync-before-replace, durable dir swap) ---
+
+
+def _fake_protocol_hooks(monkeypatch, events):
+    """Log os.replace / os.open / os.fsync while forwarding to the real
+    implementations (the write actually succeeds)."""
+    real_replace = os.replace
+    real_open = os.open
+
+    def fake_replace(src, dst):
+        events.append(("replace", src, dst))
+        return real_replace(src, dst)
+
+    def fake_open(path, flags, *a, **kw):
+        fd = real_open(path, flags, *a, **kw)
+        events.append(("open", path, flags, fd))
+        return fd
+
+    def fake_fsync(fd):
+        events.append(("fsync", fd))
+
+    monkeypatch.setattr(os, "replace", fake_replace)
+    monkeypatch.setattr(os, "open", fake_open)
+    monkeypatch.setattr(os, "fsync", fake_fsync)
+
+
+def _assert_durable_protocol(events, target_dir):
+    """The protocol must run: file fsync (on the temp file's open fd) ->
+    replace -> directory fsync (on the O_RDONLY fd of the target's directory).
+    The file fd is closed before the directory open, so fd numbers may be
+    reused; identity is proven via the open events, not fd-number inequality."""
+    i_fs = [i for i, e in enumerate(events) if e[0] == "fsync"]
+    i_re = [i for i, e in enumerate(events) if e[0] == "replace"]
+    assert i_fs[0] < i_re[0] < i_fs[-1], f"protocol order violated: {events}"
+    fsync_fds = [e[1] for e in events if e[0] == "fsync"]
+    assert len(fsync_fds) == 2, f"expected file + directory fsync, got: {events}"
+    tmp_open = next(
+        (e for e in events if e[0] == "open" and e[2] & os.O_EXCL),
+        "no O_EXCL temp-file open found",
+    )
+    assert fsync_fds[0] == tmp_open[3], "file fsync must be on the temp file's fd"
+    dir_opens = [e for e in events if e[0] == "open" and e[2] == os.O_RDONLY]
+    assert len(dir_opens) == 1 and dir_opens[0][1] == target_dir, dir_opens
+    assert fsync_fds[1] == dir_opens[0][3], "dir fsync must use the dir open's fd"
+
+
+def test_file_fsynced_before_replace_and_directory_fsynced_after(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    """save_cartridge_result runs the full durable protocol: the file fd is
+    fsync'd BEFORE os.replace (new contents reach stable storage first), and
+    the results directory is fsync'd AFTER the swap (the swap itself is
+    durable)."""
+    durability.directory_fsync_supported()  # pre-warm the (cached) probe
+    events = []
+    _fake_protocol_hooks(monkeypatch, events)
+    dest = result_store.save_cartridge_result(str(tmp_path), "cart-u", "ok")
+    _assert_durable_protocol(events, os.path.dirname(dest))
+    assert (tmp_path / "results" / "cart-u.txt").read_bytes() == b"ok"
+
+
+def test_file_fsync_failure_raises_no_target_no_temp(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    """A failed file fsync (the data-durability step) raises, leaves no
+    target and no temp file -- the pre-fix corruption window (flush-only,
+    no fsync) is closed for results too."""
+    durability.directory_fsync_supported()
+
+    def boom(fd):
+        raise OSError("no room for data")
+
+    monkeypatch.setattr(os, "fsync", boom)
+    with pytest.raises(OSError, match="no room for data"):
+        result_store.save_cartridge_result(str(tmp_path), "cart-f", "ok")
+    assert not (tmp_path / "results" / "cart-f.txt").exists()
+    assert not any(p.suffix == ".tmp" for p in (tmp_path / "results").iterdir())
+
+
+def test_directory_fsync_failure_raises_after_swap(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    """On a supported platform a failing directory fsync (post-swap) raises
+    -- a failed durability operation is never silently reported as success.
+    Post-swap semantics: the destination holds the new (file-fsynced), byte-
+    exact result and the caller must treat the save as incomplete and retry."""
+    durability.directory_fsync_supported()
+    data = _UNICODE_PAYLOAD.encode("utf-8")
+
+    real_open = os.open
+    dir_fd = {}
+
+    def fake_open(p, flags, *a, **kw):
+        fd = real_open(p, flags, *a, **kw)
+        if flags == os.O_RDONLY:
+            dir_fd["fd"] = fd
+        return fd
+
+    def fake_fsync(fd):
+        if fd == dir_fd.get("fd"):
+            raise OSError("directory fsync failed")
+
+    monkeypatch.setattr(os, "open", fake_open)
+    monkeypatch.setattr(os, "fsync", fake_fsync)
+    with pytest.raises(OSError, match="directory fsync failed"):
+        result_store.save_cartridge_result(str(tmp_path), "cart-d", _UNICODE_PAYLOAD)
+    assert (tmp_path / "results" / "cart-d.txt").read_bytes() == data
+    assert not any(p.suffix == ".tmp" for p in (tmp_path / "results").iterdir())
+
+
+def test_unsupported_dir_fsync_still_succeeds_byte_exact(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    """Platform degradation (e.g. Windows): with the cached directory-fsync
+    capability flag forced False the save still succeeds, exactly one fsync
+    runs (the file), and the result is byte-exact (incl. Unicode)."""
+    durability.directory_fsync_supported()
+    monkeypatch.setattr(durability, "_directory_fsync_support", False)
+    fsyncs = []
+    monkeypatch.setattr(os, "fsync", lambda fd: fsyncs.append(fd))
+
+    data = _UNICODE_PAYLOAD.encode("utf-8")
+    result_store.save_cartridge_result(str(tmp_path), "cart-u", _UNICODE_PAYLOAD)
+    assert len(fsyncs) == 1, f"expected exactly one fsync, got {fsyncs}"
+    assert (tmp_path / "results" / "cart-u.txt").read_bytes() == data

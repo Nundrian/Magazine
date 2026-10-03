@@ -4,8 +4,11 @@ The run loop in ``magazine.run_loop`` discards the ``dispatch_result`` produced
 by a successful dispatch (it only inspects ``result.state``).  This module is the
 first durable-output primitive: it writes the exact returned model result to a
 deterministic, cartridge-specific path *inside* the run directory, before the
-run is marked complete.  It mirrors the atomic-write and no-``fsync`` reliability
-principles of ``magazine.state_store``.
+run is marked complete.  It mirrors the durable atomic-write of
+``magazine.state_store``: the write goes through the shared crash-durable
+protocol of :mod:`magazine.durability` (temp file in the target directory,
+file fsync before the atomic ``os.replace``, directory fsync afterwards
+where supported).
 
 Path convention
 ---------------
@@ -30,8 +33,8 @@ from __future__ import annotations
 import hashlib
 import os
 import re
-import tempfile
 
+from magazine.durability import atomic_write
 from magazine.paths import resolve_contained_path
 
 __all__ = ["result_path", "save_cartridge_result"]
@@ -139,12 +142,15 @@ def result_path(run_dir: str, cartridge_id: str) -> str:
 def save_cartridge_result(run_dir: str, cartridge_id: str, text: object) -> str:
     """Persist the exact returned model result durably.
 
-    The result is written UTF-8, atomically, to ``result_path(run_dir,
-    cartridge_id)`` using the same reliability pattern as
-    ``state_store.save_run_state``: ``tempfile.mkstemp`` in the target directory
-    (so ``os.replace`` is atomic), a binary write of the UTF-8 bytes,
-    ``f.flush()`` (buffers to the OS; no ``fsync``), and ``os.replace``.  The
-    temporary file is unlinked on any failure.
+    The result is written UTF-8, atomically and crash-durably, to ``result_path(run_dir,
+    cartridge_id)`` via :mod:`magazine.durability`'s shared durable atomic
+    write: ``tempfile.mkstemp`` in the target directory (so ``os.replace`` is
+    atomic), a binary write of the UTF-8 bytes, ``f.flush()`` and ``fsync`` of
+    the temporary file before the atomic ``os.replace`` (new contents reach
+    stable storage before the swap), then a fsync of the containing directory
+    where the platform supports directory fsync (best-effort no-op on
+    platforms that do not, e.g. Windows).  The temporary file is unlinked on
+    any failure before the swap.
 
     Parameters
     ----------
@@ -177,16 +183,5 @@ def save_cartridge_result(run_dir: str, cartridge_id: str, text: object) -> str:
     data = (
         text.encode("utf-8") if isinstance(text, str) else str(text).encode("utf-8")
     )
-    fd, tmp = tempfile.mkstemp(dir=results_dir)
-    try:
-        with os.fdopen(fd, "wb") as f:
-            f.write(data)
-            f.flush()
-        os.replace(tmp, dest)
-        return dest
-    except BaseException:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        raise
+    atomic_write(dest, data, prefix=".result_", suffix=".tmp")
+    return dest

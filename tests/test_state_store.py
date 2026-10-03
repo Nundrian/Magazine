@@ -9,6 +9,8 @@ import tempfile
 
 import pytest
 
+import magazine.durability as durability
+
 from magazine.state import (
     STATUS_COMPLETED,
     STATUS_HALTED,
@@ -161,7 +163,9 @@ def test_simulated_write_failure_cleans_temp_file(tmp_path, monkeypatch):
     def boom(*args, **kwargs):
         raise OSError("write failed")
 
-    monkeypatch.setattr("json.dump", boom)
+    # The serialization step feeding the shared atomic writer fails; the
+    # save must raise and leave no temp file behind (behavior unchanged).
+    monkeypatch.setattr("json.dumps", boom)
     with pytest.raises(OSError):
         save_run_state(path, new_ready_state(["c1"]))
     assert _no_temp_files(tmp_path)
@@ -234,3 +238,128 @@ def test_relative_target_temp_created_in_cwd(tmp_path, monkeypatch):
         assert _no_temp_files(tmp_path)
     finally:
         os.chdir(original_cwd)
+
+
+# ---------------------------------------------------------------------------
+# Crash-durability protocol (fsync-before-replace, durable dir swap)
+# ---------------------------------------------------------------------------
+
+def _fake_protocol_hooks(monkeypatch, events):
+    """Log os.replace / os.open / os.fsync while forwarding to the real
+    implementations (the write actually succeeds)."""
+    real_replace = os.replace
+    real_open = os.open
+
+    def fake_replace(src, dst):
+        events.append(("replace", src, dst))
+        return real_replace(src, dst)
+
+    def fake_open(path, flags, *a, **kw):
+        fd = real_open(path, flags, *a, **kw)
+        events.append(("open", path, flags, fd))
+        return fd
+
+    def fake_fsync(fd):
+        events.append(("fsync", fd))
+
+    monkeypatch.setattr(os, "replace", fake_replace)
+    monkeypatch.setattr(os, "open", fake_open)
+    monkeypatch.setattr(os, "fsync", fake_fsync)
+
+
+def _assert_durable_protocol(events, target_dir):
+    """The protocol must run: file fsync (on the temp file's open fd) ->
+    replace -> directory fsync (on the O_RDONLY fd of the target's directory).
+    The file fd is closed before the directory open, so fd numbers may be
+    reused; identity is proven via the open events, not fd-number inequality."""
+    i_fs = [i for i, e in enumerate(events) if e[0] == "fsync"]
+    i_re = [i for i, e in enumerate(events) if e[0] == "replace"]
+    assert i_fs[0] < i_re[0] < i_fs[-1], f"protocol order violated: {events}"
+    fsync_fds = [e[1] for e in events if e[0] == "fsync"]
+    assert len(fsync_fds) == 2, f"expected file + directory fsync, got: {events}"
+    tmp_open = next(
+        (e for e in events if e[0] == "open" and e[2] & os.O_EXCL),
+        "no O_EXCL temp-file open found",
+    )
+    assert fsync_fds[0] == tmp_open[3], "file fsync must be on the temp file's fd"
+    dir_opens = [e for e in events if e[0] == "open" and e[2] == os.O_RDONLY]
+    assert len(dir_opens) == 1 and dir_opens[0][1] == target_dir, dir_opens
+    assert fsync_fds[1] == dir_opens[0][3], "dir fsync must use the dir open's fd"
+
+
+def test_file_fsynced_before_replace_and_directory_fsynced_after(tmp_path, monkeypatch):
+    """save_run_state runs the full durable protocol: the file fd is fsync'd
+    BEFORE os.replace (new contents reach stable storage first), and the
+    containing directory is fsync'd AFTER the swap (the swap itself is
+    durable)."""
+    durability.directory_fsync_supported()  # pre-warm the (cached) probe
+    path = str(tmp_path / "state.json")
+    events = []
+    _fake_protocol_hooks(monkeypatch, events)
+    save_run_state(path, new_ready_state(["c1"]))
+    _assert_durable_protocol(events, os.path.dirname(path))
+    assert load_run_state(path) == new_ready_state(["c1"])
+
+
+def test_file_fsync_failure_leaves_target_unchanged_and_no_temp(tmp_path, monkeypatch):
+    """A failed file fsync (the data-durability step) raises with the
+    old state intact and no temp file left behind -- the pre-fix corruption
+    window (flush-only, no fsync) is closed."""
+    durability.directory_fsync_supported()
+    path = tmp_path / "state.json"
+    # Seed a valid previous state; a failed re-save must leave it intact.
+    save_run_state(str(path), new_ready_state(["a"]))
+
+    def boom(fd):
+        raise OSError("no room for data")
+
+    monkeypatch.setattr(os, "fsync", boom)
+    with pytest.raises(OSError, match="no room for data"):
+        save_run_state(str(path), new_ready_state(["b"]))
+    assert load_run_state(str(path)) == new_ready_state(["a"])
+    assert _no_temp_files(tmp_path)
+
+
+def test_directory_fsync_failure_raises_after_swap(tmp_path, monkeypatch):
+    """On a supported platform a failing directory fsync (post-swap) raises
+    -- a failed durability operation is never silently reported as success."
+    Post-swap semantics: the destination holds the new (file-fsynced) data
+    and the caller must treat the save as incomplete and retry."""
+    durability.directory_fsync_supported()
+    path = tmp_path / "state.json"
+    state = new_ready_state(["c1"])
+
+    real_open = os.open
+    dir_fd = {}
+
+    def fake_open(p, flags, *a, **kw):
+        fd = real_open(p, flags, *a, **kw)
+        if flags == os.O_RDONLY:
+            dir_fd["fd"] = fd
+        return fd
+
+    def fake_fsync(fd):
+        if fd == dir_fd.get("fd"):
+            raise OSError("directory fsync failed")
+
+    monkeypatch.setattr(os, "open", fake_open)
+    monkeypatch.setattr(os, "fsync", fake_fsync)
+    with pytest.raises(OSError, match="directory fsync failed"):
+        save_run_state(str(path), state)
+    assert load_run_state(str(path)) == state
+    assert _no_temp_files(tmp_path)
+
+
+def test_unsupported_dir_fsync_still_succeeds_with_file_fsync_only(tmp_path, monkeypatch):
+    """Platform degradation (e.g. Windows): with the cached directory-fsync
+    capability flag forced False the save still succeeds, exactly one fsync
+    runs (the file), and the round-trip is byte-exact."""
+    durability.directory_fsync_supported()
+    monkeypatch.setattr(durability, "_directory_fsync_support", False)
+    fsyncs = []
+    monkeypatch.setattr(os, "fsync", lambda fd: fsyncs.append(fd))
+
+    path = tmp_path / "state.json"
+    save_run_state(str(path), new_ready_state(["c1"]))
+    assert fsyncs.__len__() == 1, f"expected exactly one fsync, got {fsyncs}"
+    assert load_run_state(str(path)) == new_ready_state(["c1"])

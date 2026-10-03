@@ -36,6 +36,20 @@ async def execute_one_cartridge(
         run_dir, dispatched.cartridge_id, dispatched.dispatch_result
     )
 
+    # The result is now durably on disk.  Only now attempt to remove the
+    # temporary Open WebUI chat this dispatch created.  This is best-effort
+    # and deliberately non-fatal: the result is already persisted, and a
+    # cleanup failure must never invalidate it or corrupt the run state.  The
+    # generic dispatch boundary is otherwise untouched - non-Open-WebUI dispatch
+    # callables simply lack the ``cleanup`` attribute and are skipped.
+    cleanup = getattr(dispatch, "cleanup", None)
+    if cleanup is not None:
+        try:
+            await cleanup()
+        except Exception:
+            # A failed cleanup must not abort this cartridge's completion.
+            pass
+
     completed_state = complete.complete_current_cartridge(
         state_path,
         lock_path,

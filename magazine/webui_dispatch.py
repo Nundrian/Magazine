@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 import uuid
 from urllib.parse import urlsplit
@@ -36,6 +37,8 @@ from urllib.parse import urlsplit
 import httpx
 
 __all__ = ["make_open_webui_dispatch"]
+
+logger = logging.getLogger(__name__)
 
 
 def _normalize_tool_ids(raw) -> tuple:
@@ -117,6 +120,77 @@ def _json_body(response: httpx.Response, step: str) -> dict:
         raise ValueError(f"{step}: response body is not JSON (HTTP {response.status_code})") from exc
 
 
+class _OpenWebUIDispatch:
+    """Callable wrapper around the proven Open WebUI fresh-chat flow.
+
+    Implements the generic Magazine dispatch contract ``dispatch(prompt, model_id) -> str`` while
+    exposing two *adapter-only* attributes the generic orchestration layer may use without
+    learning the Open WebUI API shape:
+
+      * ``last_chat_id`` -- the ID of the chat created by the most recent successful
+        dispatch (``None`` when there is nothing to clean up);
+      * ``cleanup()`` -- a best-effort ``DELETE`` of that temporary chat.  It always
+        returns (``True`` if the server acknowledged removal, ``False`` otherwise)
+        and never raises, so a cleanup problem can never invalidate an already
+        persisted result or corrupt run state.
+
+    The actual fresh-chat request sequence lives in the injected ``dispatch_fn``
+    closure; this class only adds the post-persistence cleanup affordance.
+    """
+
+    def __init__(self, dispatch_fn, base_url, api_key, timeout, chat_state):
+        self._dispatch = dispatch_fn
+        self._base_url = base_url
+        self._api_key = api_key
+        self._timeout = timeout
+        self._chat_state = chat_state
+
+    @property
+    def last_chat_id(self):
+        """Chat ID created by the most recent successful dispatch, or None."""
+        return self._chat_state.get("chat_id")
+
+    async def __call__(self, prompt, model_id):
+        return await self._dispatch(prompt, model_id)
+
+    async def cleanup(self):
+        """Remove the temporary Open WebUI chat created by the most recent
+        successful dispatch.  Never raises; returns a bool."""
+        chat_id = self._chat_state.get("chat_id")
+        # Reset before the request so a failed or slow delete cannot leave a
+        # stale id that a later cycle would re-target.
+        self._chat_state["chat_id"] = None
+        if chat_id is None:
+            return False
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                response = await client.request(
+                    "DELETE",
+                    self._base_url + "/api/v1/chats/" + chat_id,
+                    headers={
+                        "Authorization": f"Bearer {self._api_key}",
+                        "Accept": "application/json",
+                    },
+                )
+            if 200 <= response.status_code < 300:
+                return True
+            if response.status_code != 404:
+                logger.warning(
+                    "Open WebUI chat cleanup %r failed with HTTP %s",
+                    chat_id,
+                    response.status_code,
+                )
+            return False
+        except Exception as exc:
+            logger.warning(
+                "Open WebUI chat cleanup %r failed: %s",
+                chat_id,
+                exc,
+                exc_info=True,
+            )
+            return False
+
+
 def make_open_webui_dispatch(
     base_url: str,
     api_key: str,
@@ -156,12 +230,21 @@ def make_open_webui_dispatch(
         raise ValueError("api_key must be a non-empty string")
     tool_ids = _normalize_tool_ids(tool_ids)
 
+    # Shared holder for the ID of the most recent successful chat creation.
+    # The closure writes to it; the adapter wrapper (returned below) reads it
+    # when the orchestration layer asks for post-persistence cleanup.
+    _chat_state = {"chat_id": None}
+
     async def dispatch(prompt: str, model_id: str) -> str:
         """Run one proven Open WebUI flow for *prompt* with *model_id*."""
         if not isinstance(prompt, str) or not prompt.strip():
             raise ValueError("prompt must be a non-empty string")
         if not isinstance(model_id, str) or not model_id.strip():
             raise ValueError("model_id must be a non-empty string")
+
+        # Never let a stale chat id from a prior dispatch cycle survive into
+        # this one; a failed dispatch must not leave a half-tracked chat.
+        _chat_state["chat_id"] = None
 
         user_id = str(uuid.uuid4())
         assistant_id = str(uuid.uuid4())
@@ -228,6 +311,10 @@ def make_open_webui_dispatch(
             if not isinstance(chat_id, str) or not chat_id:
                 raise ValueError(f"POST /api/v1/chats/new: missing chat ID (HTTP {response.status_code})")
 
+            # Track the freshly created temporary chat so the adapter can
+            # remove it after the result has been durably persisted.
+            _chat_state["chat_id"] = chat_id
+
             completion_body["chat_id"] = chat_id
 
             # --- 2. submit a completion using the supplied model_id --------
@@ -290,4 +377,7 @@ def make_open_webui_dispatch(
                 raise ValueError(f"GET {retrieve_path}: saved assistant model or done flag does not match (HTTP {response.status_code})")
             return saved_assistant.get("content", "")
 
-    return dispatch
+    # Wrap the proven flow in the adapter so callers can still use the plain
+    # ``dispatch(prompt, model_id) -> str`` contract while also gaining the
+    # adapter-only ``cleanup()`` capability for post-persistence chat removal.
+    return _OpenWebUIDispatch(dispatch, base_url, api_key, timeout, _chat_state)

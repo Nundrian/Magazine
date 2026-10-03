@@ -74,3 +74,37 @@ def test_unexpected_post_completion_status_fails(mock_execute):
         asyncio.run(run_loop.run_all_cartridges(
             "mag", "state", "lock", "owner", MODEL_MAP, object()
         ))
+
+
+class _CleanupTrackingDispatch:
+    """Awaitable dispatch that records both dispatch calls and cleanup calls."""
+
+    def __init__(self, results):
+        self._iter = iter(results)
+        self.dispatch_calls = []
+        self.cleanup_calls = 0
+
+    async def __call__(self, prompt, model_id):
+        self.dispatch_calls.append((prompt, model_id))
+        return next(self._iter)
+
+    async def cleanup(self):
+        self.cleanup_calls += 1
+
+
+def test_multi_cartridge_cleanup_each_chat_independently(tmp_path):
+    """Each dispatched cartridge's temporary Open WebUI chat is cleaned up exactly
+    once, independently of the other cartridges, across the full run."""
+    mag, run_dir, state_path, lock_path = _setup(tmp_path)
+    dispatch = _CleanupTrackingDispatch(["RA", "RB"])
+    result = asyncio.run(run_loop.run_all_cartridges(
+        str(mag), str(state_path), str(lock_path), "owner", MODEL_MAP, dispatch
+    ))
+    assert result.final_state["status"] == STATUS_COMPLETED
+    # Both cartridges dispatched through the same injected callable...
+    assert dispatch.dispatch_calls == [("A", "model-a"), ("B", "model-b")]
+    # ...and each one's temporary chat was cleaned up exactly once, independently.
+    assert dispatch.cleanup_calls == 2
+    # Every result was durably persisted before its respective cleanup.
+    assert (run_dir / "results/a.txt").read_text() == "RA"
+    assert (run_dir / "results/b.txt").read_text() == "RB"

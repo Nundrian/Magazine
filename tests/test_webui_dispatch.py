@@ -355,5 +355,105 @@ def test_tool_ids_validation_fails_before_http(monkeypatch):
     assert client.calls == []
 
 
+# ---------------------------------------------------------------------------
+# Adapter-only cleanup: post-persistence removal of the temporary chat.
+#
+# The generic ``dispatch(prompt, model_id) -> str`` contract is unchanged;
+# the adapter additionally exposes ``last_chat_id`` and an always-returns
+# ``async def cleanup()`` used by the orchestration layer.
+# ---------------------------------------------------------------------------
+
+def _responses_with_cleanup(model_id):
+    """The normal 4-step dispatch sequence plus a 200 DELETE ack."""
+    return _responses(model_id) + [(200, True)]
+
+
+def test_last_chat_id_tracks_created_chat(monkeypatch):
+    _pin_ids(monkeypatch)
+    client = _FakeClient(_responses_with_cleanup(MODEL_A))
+    dispatch = _dispatch(monkeypatch, client)
+    # Nothing created yet.
+    assert dispatch.last_chat_id is None
+    asyncio.run(dispatch(PROMPT, MODEL_A))
+    # The freshly created chat id is exposed after a successful dispatch.
+    assert dispatch.last_chat_id == CHAT_ID
+    # Cleanup removes it and resets the tracker.
+    assert asyncio.run(dispatch.cleanup()) is True
+    assert dispatch.last_chat_id is None
+
+
+def test_cleanup_deletes_the_created_chat_with_correct_auth(monkeypatch):
+    _pin_ids(monkeypatch)
+    client = _FakeClient(_responses_with_cleanup(MODEL_A))
+    dispatch = _dispatch(monkeypatch, client)
+    asyncio.run(dispatch(PROMPT, MODEL_A))
+    asyncio.run(dispatch.cleanup())
+    # The DELETE is the 5th request on the shared fake client.
+    delete = client.calls[-1]
+    assert len(client.calls) == 5
+    assert delete["method"] == "DELETE"
+    assert delete["url"] == BASE_URL + "/api/v1/chats/" + CHAT_ID
+    assert delete["headers"]["Authorization"] == f"Bearer {API_KEY}"
+    assert delete["headers"]["Accept"] == "application/json"
+    # A DELETE carries no JSON body; only auth/accept headers.
+    assert "Content-Type" not in delete["headers"]
+
+
+def test_cleanup_is_noop_when_no_chat_created(monkeypatch):
+    _pin_ids(monkeypatch)
+    client = _FakeClient([])
+    dispatch = _dispatch(monkeypatch, client)
+    assert dispatch.last_chat_id is None
+    asyncio.run(dispatch.cleanup())  # must not raise
+    assert client.calls == []  # no HTTP was made
+
+
+def test_cleanup_http_failure_does_not_raise_and_resets(monkeypatch):
+    """A 5xx from the DELETE is swallowed: cleanup never raises."""
+    _pin_ids(monkeypatch)
+    client = _FakeClient(_responses(MODEL_A) + [(500, {"error": "nope"})])
+    dispatch = _dispatch(monkeypatch, client)
+    asyncio.run(dispatch(PROMPT, MODEL_A))
+    assert dispatch.last_chat_id == CHAT_ID
+    assert asyncio.run(dispatch.cleanup()) is False  # 5xx -> not removed
+    assert dispatch.last_chat_id is None  # tracker still reset
+
+
+def test_cleanup_404_is_gracefully_swallowed(monkeypatch):
+    """A 404 (chat already gone) is not a crash and returns False."""
+    _pin_ids(monkeypatch)
+    client = _FakeClient(_responses(MODEL_A) + [(404, {"detail": "not found"})])
+    dispatch = _dispatch(monkeypatch, client)
+    asyncio.run(dispatch(PROMPT, MODEL_A))
+    assert asyncio.run(dispatch.cleanup()) is False
+    assert dispatch.last_chat_id is None
+
+
+def test_cleanup_is_idempotent(monkeypatch):
+    """A second cleanup call cannot re-delete a stale or already-removed chat."""
+    _pin_ids(monkeypatch)
+    client = _FakeClient(_responses(MODEL_A) + [(200, True)])
+    dispatch = _dispatch(monkeypatch, client)
+    asyncio.run(dispatch(PROMPT, MODEL_A))
+    asyncio.run(dispatch.cleanup())
+    # Re-calling cleanup must NOT issue a second DELETE.
+    assert len(client.calls) == 5  # 4 dispatch + exactly 1 delete
+    assert asyncio.run(dispatch.cleanup()) is False
+
+
+def test_cleanup_transport_error_does_not_raise(monkeypatch):
+    _pin_ids(monkeypatch)
+    client = _FakeClient(_responses(MODEL_A))
+    dispatch = _dispatch(monkeypatch, client)
+    asyncio.run(dispatch(PROMPT, MODEL_A))
+    # Force the cleanup's own client to raise a transport error.
+    monkeypatch.setattr(
+        webui_dispatch.httpx, "AsyncClient",
+        lambda *a, **kw: _TransportClient(httpx.ConnectError("cleanup refused")),
+    )
+    assert asyncio.run(dispatch.cleanup()) is False
+    assert dispatch.last_chat_id is None
+
+
 if __name__ == "__main__":
     raise SystemExit("run via pytest: pytest tests/test_webui_dispatch.py -q")

@@ -55,10 +55,7 @@ def _assert_protocol(events, target_dir):
     dir_opens = [e for e in events if e[0] == "open" and e[2] == os.O_RDONLY]
     assert len(dir_opens) == 1, f"expected one O_RDONLY directory open, got: {events}"
     assert dir_opens[0][1] == target_dir, "directory fsync must be on the target's directory"
-    assert (
-        fsync_fds[1] == dir_opens[0][3],
-        "the directory fsync fd must be the O_RDONLY open of the containing directory",
-    )
+    assert fsync_fds[1] == dir_opens[0][3], ("the directory fsync fd must be the O_RDONLY open of the containing directory")
 
 
 def _fake_protocol_hooks(monkeypatch, events):
@@ -210,6 +207,30 @@ def test_protocol_file_fsync_before_replace_dir_fsync_after(
     atomic_write(target, b"payload")
     _assert_protocol(events, os.path.dirname(target))
     assert (tmp_path / "out.txt").read_bytes() == b"payload"
+
+
+def test_protocol_detects_mismatched_directory_fsync_fd(tmp_path):
+    """Regression: the protocol assertion must RAISE when the directory
+    fsync is performed on a different file descriptor than the O_RDONLY
+    directory open.
+
+    This guards against a latent defect in which the assertion was written as
+    a parenthesized two-tuple ``assert (cond, msg)``, which Python treats as
+    ``assert (cond, msg)`` -- a truthy 2-tuple that never fails.  In that form
+    a real protocol violation would pass silently, weakening the crash-durability
+    guarantee of ``atomic_write``.  With the corrected ``assert cond, msg``
+    form this regression test fails on the buggy code and passes on the fix.
+    """
+    dir_path = str(tmp_path)
+    events = [
+        ("open", str(tmp_path / "out.tmp"), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 5),
+        ("fsync", 5),                       # file fsync on the temp file fd
+        ("open", dir_path, os.O_RDONLY, 7),  # O_RDONLY open of the containing directory
+        ("replace", str(tmp_path / "out.tmp"), str(tmp_path / "out.txt")),
+        ("fsync", 99),                      # directory fsync on the WRONG fd (99 != 7)
+    ]
+    with pytest.raises(AssertionError, match="directory fsync fd"):
+        _assert_protocol(events, dir_path)
 
 
 def test_file_fsync_failure_raises_no_temp_no_target(tmp_path, monkeypatch):

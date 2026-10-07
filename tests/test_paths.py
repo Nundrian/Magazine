@@ -5,7 +5,7 @@ from pathlib import Path
 import tempfile
 import os
 
-from magazine.paths import resolve_contained_path
+from magazine.paths import execution_file_path, resolve_contained_path
 
 
 @pytest.fixture()
@@ -63,3 +63,38 @@ def test_symlink_escape_rejected():
             # Resolving through the symlink should be rejected
             with pytest.raises(ValueError, match="escapes root"):
                 resolve_contained_path(tmp_root, "link/secret.txt")
+
+
+class TestExecutionFilePath:
+    """Tests for magazine.paths.execution_file_path.
+
+    The deterministic ``execution.json`` location for a run directory, per the
+    execution-ownership design (Slice 0). It must be ``run_dir / execution.json``
+    (a sibling of ``state.json`` and ``.lock``) and return an absolute ``Path``.
+    """
+
+    def test_returns_execution_json_in_run_dir(self, tmp_root) -> None:
+        run_dir = Path(tmp_root) / "run"
+        result = execution_file_path(run_dir)
+        assert result == run_dir / "execution.json"
+        assert result.is_relative_to(run_dir.resolve())
+
+    def test_is_absolute(self, tmp_root) -> None:
+        run_dir = Path(tmp_root) / "run"
+        assert execution_file_path(run_dir).is_absolute()
+
+    def test_accepts_string_run_dir(self, tmp_root) -> None:
+        run_dir = Path(tmp_root) / "run"
+        result = execution_file_path(str(run_dir))
+        assert result == run_dir / "execution.json"
+        assert result.is_relative_to(run_dir.resolve())
+
+    def test_distinct_from_state_and_lock(self, tmp_root) -> None:
+        run_dir = Path(tmp_root) / "run"
+        execution = execution_file_path(run_dir)
+        state = run_dir / "state.json"
+        lock = run_dir / ".lock"
+        assert execution != state
+        assert execution != lock
+        # All three sit in the same run directory.
+        assert execution.parent == state.parent == lock.parent

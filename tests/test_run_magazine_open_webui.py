@@ -5,6 +5,7 @@ import pytest
 
 from magazine import run_loop, run_preparation
 from magazine.async_runner import run_magazine_open_webui
+from magazine.runtime_identity import RuntimeIdentity
 from magazine.state import STATUS_COMPLETED, STATUS_RUNNING
 
 MAGAZINE_PATH = "/tmp/magazine.json"
@@ -13,6 +14,7 @@ OWNER_ID = "owner"
 BASE_URL = "http://localhost:3000"
 API_KEY = "key"
 MODEL_MAP = {"research": "model-a"}
+_TEST_WRITER = RuntimeIdentity(runtime_id="0" * 32, pid=42, start_ticks=1000)
 
 
 def _call():
@@ -24,7 +26,8 @@ def _call():
 def _running():
     return run_preparation.PreparedRun(
         state={"done": [], "current": "a", "todo": [], "status": STATUS_RUNNING, "revision": 1},
-        state_path="/tmp/state.json", lock_path="/tmp/.lock"
+        state_path="/tmp/state.json", lock_path="/tmp/.lock",
+        attempt=1, identity=_TEST_WRITER
     )
 
 
@@ -39,7 +42,10 @@ def test_factory_credentials_and_dispatch_forwarded(mock_factory, mock_prepare, 
     result = _call()
     # Omitting tool_ids passes None through, preserving the previous factory call.
     mock_factory.assert_called_once_with(BASE_URL, API_KEY, tool_ids=None)
-    mock_loop.assert_awaited_once_with(MAGAZINE_PATH, "/tmp/state.json", "/tmp/.lock", OWNER_ID, MODEL_MAP, dispatch)
+    mock_loop.assert_awaited_once_with(
+        MAGAZINE_PATH, "/tmp/state.json", "/tmp/.lock", OWNER_ID,
+        1, _TEST_WRITER, MODEL_MAP, dispatch
+    )
     assert result is final
 
 

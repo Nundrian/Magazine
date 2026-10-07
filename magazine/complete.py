@@ -30,6 +30,7 @@ or changes any transition or locking API.
 from __future__ import annotations
 
 from magazine import run_action
+from magazine.runtime_identity import RuntimeIdentity
 
 __all__ = ["complete_current_cartridge"]
 
@@ -38,6 +39,8 @@ def complete_current_cartridge(
     state_path: str,
     lock_path: str,
     owner_id: str,
+    writer_attempt: int,
+    writer_identity: RuntimeIdentity,
     expected_current_id: str | None = None,
 ) -> dict:
     """Record that the run's current cartridge completed successfully.
@@ -57,6 +60,13 @@ def complete_current_cartridge(
         lock_path: Path to the run lock file.
         owner_id: Owner ID written into the run lock and passed through to the
             guarded persisted action unchanged.
+        writer_attempt: The execution-attempt number the run's claim must
+            carry.  Passed unchanged to the guarded persisted action, which
+            verifies it against the execution claim before persisting.
+        writer_identity: The runtime identity whose ``runtime_id`` the run's
+            claim must carry.  Passed unchanged to the guarded persisted
+            action, which verifies it against the execution claim before
+            persisting.
         expected_current_id: Optional ID of the cartridge that was actually
             dispatched before this completion is recorded.  Passed unchanged
             to :func:`magazine.run_action.persist_complete_current_cartridge`,
@@ -71,6 +81,11 @@ def complete_current_cartridge(
     Raises:
         :class:`magazine.run_lock.MagazineLockError`: if the lock cannot be
             acquired or released (propagated from the guarded action).
+        :class:`magazine.schema.ExecutionOwnershipError`: if the execution
+            claim is missing, malformed, or its ``attempt`` / ``runtime_id``
+            do not match the writer.  A stale/non-owner generation is refused
+            and the state is left untouched (propagated from the guarded
+            action).
         :class:`magazine.state.MagazineStateError`: if the persisted state is
             malformed (propagated from the guarded action).
         :class:`magazine.run_transition.RunTransitionError`: if the loaded
@@ -92,5 +107,7 @@ def complete_current_cartridge(
         state_path,
         lock_path,
         owner_id,
+        writer_attempt=writer_attempt,
+        writer_identity=writer_identity,
         expected_current_id=expected_current_id,
     )

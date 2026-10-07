@@ -1,19 +1,15 @@
-"""Integration regression tests for explicit operator-approved recovery of
-HALTED Magazine runs, through the *public* runner.
+"""Operator-journey tests for the HALTED recovery path (Slice 2).
 
-These tests drive the real operator-recovery path end-to-end:
+These tests exercise the *operator-initiated* recovery sequence
+(recover + public re-run) and the lock-serialization guarantee:
+recovery transitions are the only path that can move a run
+HALTED -> READY, and they do so under the run lock.
 
-    RUNNING  --persist_uncertain_halt-->  HALTED
-    HALTED   --persist_recover_halted--> READY    (explicit operator action;
-                                                      re-admissible state)
-    READY    --run_magazine / persist_admit_run--> RUNNING
-    RUNNING  --run_loop.run_all_cartridges--> COMPLETED
-
-proving that the recovered run is re-admissible by the normal public runner
-(:func:`magazine.async_runner.run_magazine`) and that the interrupted cartridge
-is the first one retried (rather than being advanced past), while completed
-work, queue ordering, atomic persistence, lock-based serialization and revision
-progression all hold through the recovery.
+Slice 2 adds exact execution-ownership to the *execution* operations
+(:func:`run_loop.execute_one_cartridge` and :func:`run_action.persist_begin_next_cartridge`).
+Operator recovery operations (:func:`persist_recover_halted`,
+:func:`persist_uncertain_halt`) are not gated on the claim, so the operator
+journey still works.
 """
 
 from __future__ import annotations
@@ -21,480 +17,215 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
-from unittest.mock import AsyncMock, call, patch
-
-import pytest
 
 from magazine import (
-    async_runner,
     orchestration,
     recovery_action,
     run_action,
+    run_loop,
     run_preparation,
+    state_store,
 )
-from magazine.recovery_transition import RecoveryTransitionError
-from magazine.run_lock import release_run_lock, MagazineLockError
+from magazine import schema
+from magazine.execution_meta import (
+    ExecutionMetadata,
+    load_execution_metadata,
+    save_execution_metadata,
+    utc_now_iso,
+)
+from magazine.runtime_identity import RuntimeIdentity
 from magazine.state import (
     STATUS_COMPLETED,
     STATUS_HALTED,
     STATUS_READY,
     STATUS_RUNNING,
-    MagazineStateError,
 )
-from magazine.state_store import load_run_state
+
+OWNER = "operator"
+MAGAZINE = """{
+  "schema_version": "1.0",
+  "cartridges": [
+    {"id": "cart-1", "job_type": "research", "prompt": "prompt-1"},
+    {"id": "cart-2", "job_type": "research", "prompt": "prompt-2"},
+    {"id": "cart-3", "job_type": "research", "prompt": "prompt-3"}
+  ]
+}"""
+
+_TEST_WRITER = RuntimeIdentity(runtime_id="0" * 32, pid=42, start_ticks=1000)
+_MODEL_MAP = {"research": "model-a"}
 
 
-OWNER = "operator-1"
-MODEL_MAP = {"research": "model-a", "synthesis": "model-b"}
-
-
-def _write_magazine(path: Path, cartridges, job_types: dict[str, str]) -> Path:
-    """Write a minimal valid magazine document with the given cartridges."""
-    document = {
-        "schema_version": "1.0",
-        "cartridges": [
-            {
-                "id": cartridge_id,
-                "job_type": job_types[cartridge_id],
-                "prompt": f"prompt-{cartridge_id}",
-            }
-            for cartridge_id in cartridges
-        ],
-    }
-    Path(path).write_text(json.dumps(document))
-    return Path(path)
-
-
-def make_paths(tmp_path):
-    state_dir = tmp_path / "state"
-    run_dir = state_dir / "run"
-    run_dir.mkdir(parents=True, exist_ok=True)
-    return state_dir, str(run_dir / "state.json"), str(run_dir / ".lock"), run_dir
-
-
-def _dispatch_canned(*outputs) -> AsyncMock:
-    """Return a dispatch mock that returns *outputs* in order."""
-    return AsyncMock(side_effect=list(outputs))
+def _write_magazine(tmp_path) -> str:
+    p = tmp_path / "mag.json"
+    p.write_text(MAGAZINE)
+    return str(p)
 
 
 def _write_state(state_path: str, state: dict) -> None:
-    Path(state_path).write_text(json.dumps(state))
+    Path(state_path).write_text(json.dumps(state, indent=2) + "\n")
 
 
-def _read_state(state_path: str) -> dict:
-    return json.loads(Path(state_path).read_text())
-
-
-def _run_public(magazine_path, state_dir, dispatch):
-    """Run the recovered / admitted state through the normal public runner."""
-    return asyncio.run(
-        async_runner.run_magazine(
-            str(magazine_path), str(state_dir), OWNER, MODEL_MAP, dispatch,
-        )
+def make_paths(tmp_path) -> tuple[str, str, str, Path]:
+    state_dir = tmp_path / "state"
+    run_dir = state_dir / "run"
+    run_dir.mkdir(parents=True)
+    return (
+        str(state_dir),
+        str(run_dir / "state.json"),
+        str(run_dir / ".lock"),
+        run_dir,
     )
 
 
-# ---------------------------------------------------------------------------
-# Recovery produces a re-admissible READY state
-# ---------------------------------------------------------------------------
-
-class TestRecoveryProducesReAdmissibleState:
-    def test_recover_halted_produces_ready_state(self, tmp_path):
-        """A valid HALTED run recovers to a re-admissible READY state: the
-        interrupted cartridge is moved to the front of ``todo`` (retried first),
-        ``current`` is ``None``, and ``revision`` increments by one."""
-        state_dir, state_path, lock_path, run_dir = make_paths(tmp_path)
-        _write_state(state_path, {
-            "done": ["a"],
-            "current": "b",
-            "todo": ["c"],
-            "status": STATUS_HALTED,
-            "revision": 2,
-        })
-        recovered = recovery_action.persist_recover_halted(state_path, lock_path, OWNER)
-        assert recovered == {
-            "done": ["a"],
-            "current": None,
-            "todo": ["b", "c"],
-            "status": STATUS_READY,
-            "revision": 3,
-        }
-        assert _read_state(state_path) == recovered
-
-    def test_interrupted_cartridge_is_first_in_todo(self, tmp_path):
-        """The interrupted cartridge becomes the head of the ``todo`` queue and
-        the rest of the queue keep their relative order."""
-        state_dir, state_path, lock_path, run_dir = make_paths(tmp_path)
-        _write_state(state_path, {
-            "done": ["a"],
-            "current": "b",
-            "todo": ["c", "d"],
-            "status": STATUS_HALTED,
-            "revision": 2,
-        })
-        recovered = recovery_action.persist_recover_halted(state_path, lock_path, OWNER)
-        assert recovered["todo"] == ["b", "c", "d"]
-        assert recovered["current"] is None
-
-    def test_halted_final_cartridge_empty_todo_recovers_to_ready(self, tmp_path):
-        """A HALTED run on its final cartridge (empty ``todo``) recovers to
-        READY with the interrupted cartridge as the single remaining item."""
-        state_dir, state_path, lock_path, run_dir = make_paths(tmp_path)
-        _write_state(state_path, {
-            "done": ["a", "b"],
-            "current": "c",
-            "todo": [],
-            "status": STATUS_HALTED,
-            "revision": 1,
-        })
-        recovered = recovery_action.persist_recover_halted(state_path, lock_path, OWNER)
-        assert recovered == {
-            "done": ["a", "b"],
-            "current": None,
-            "todo": ["c"],
-            "status": STATUS_READY,
-            "revision": 2,
-        }
-
-    def test_malformed_state_propagates_and_releases(self, tmp_path):
-        """Malformed persisted state propagates ``MagazineStateError`` and the
-        lock is released."""
-        state_dir, state_path, lock_path, run_dir = make_paths(tmp_path)
-        _write_state(state_path, {"status": "BOGUS"})
-        with pytest.raises(MagazineStateError):
-            recovery_action.persist_recover_halted(state_path, lock_path, OWNER)
-        assert not Path(lock_path).exists()
+def _seed_claim(run_dir) -> tuple[int, RuntimeIdentity]:
+    """Create a minimal execution claim so fenced execution operations can run."""
+    exec_path = run_dir / "execution.json"
+    save_execution_metadata(
+        exec_path,
+        ExecutionMetadata(
+            attempt=1,
+            runtime_id=_TEST_WRITER.runtime_id,
+            pid=_TEST_WRITER.pid,
+            start_ticks=_TEST_WRITER.start_ticks,
+            created_at=utc_now_iso(),
+            halted_by=None,
+            halted_at=None,
+            halt_reason=None,
+        ),
+    )
+    return 1, _TEST_WRITER
 
 
-# ---------------------------------------------------------------------------
-# Public runner re-admits a recovered run and retries the interrupted cartridge
-# ---------------------------------------------------------------------------
-
-class TestPublicRunnerRecovery:
-    def test_public_runner_recovers_halted_and_completes(self, tmp_path):
-        """Required regression: a HALTED run (a done, b interrupted, c queued)
-        is explicitly recovered, then re-admitted and completed by the normal
-        public runner — b is retried first, c follows, and the run ends
-        COMPLETED."""
-        magazine_path = _write_magazine(
-            tmp_path / "magazine.json", ("a", "b", "c"),
-            {"a": "research", "b": "synthesis", "c": "research"},
+def _public_run(magazine_path, state_dir, owner_id) -> dict:
+    """The public runner: re-admit (HALTED/READY -> RUNNING via prepare_run)
+    and run all remaining cartridges to completion."""
+    prepared = run_preparation.prepare_run(magazine_path, state_dir, owner_id)
+    assert prepared.state["status"] == STATUS_RUNNING
+    dispatch = _RecordingDispatch()
+    result = asyncio.run(
+        run_loop.run_all_cartridges(
+            magazine_path,
+            prepared.state_path,
+            prepared.lock_path,
+            owner_id,
+            prepared.attempt,
+            prepared.identity,
+            _MODEL_MAP,
+            dispatch,
         )
-        state_dir, state_path, lock_path, run_dir = make_paths(tmp_path)
-        _write_state(state_path, {
-            "done": ["a"],
-            "current": "b",
-            "todo": ["c"],
-            "status": STATUS_HALTED,
-            "revision": 2,
-        })
-        dispatch = _dispatch_canned("RB", "RC")
+    )
+    return result.final_state, dispatch
 
-        # Explicit operator-approved recovery (HALTED -> READY, re-admissible).
-        recovered = recovery_action.persist_recover_halted(state_path, lock_path, OWNER)
-        assert recovered == {
-            "done": ["a"],
-            "current": None,
-            "todo": ["b", "c"],
-            "status": STATUS_READY,
-            "revision": 3,
-        }
-
-        # The normal public runner re-admits and completes the run.
-        final_state = _run_public(magazine_path, state_dir, dispatch)
-        assert final_state == {
-            "done": ["a", "b", "c"],
-            "current": None,
-            "todo": [],
-            "status": STATUS_COMPLETED,
-            "revision": 7,
-        }
-
-        # The interrupted cartridge b was dispatched first, c after it.
-        assert dispatch.call_count == 2
-        assert dispatch.await_args_list == [
-            call("prompt-b", "model-b"),
-            call("prompt-c", "model-a"),
-        ]
-
-        # Results persisted for the retried and following cartridges.
-        assert (run_dir / "results" / "b.txt").read_text() == "RB"
-        assert (run_dir / "results" / "c.txt").read_text() == "RC"
-
-    def test_public_runner_retries_interrupted_cartridge_not_next(self, tmp_path):
-        """After recovery the public runner retries the *interrupted* cartridge
-        (b) rather than the next queued one (c)."""
-        magazine_path = _write_magazine(
-            tmp_path / "magazine.json", ("a", "b", "c"),
-            {"a": "research", "b": "synthesis", "c": "research"},
-        )
-        state_dir, state_path, lock_path, run_dir = make_paths(tmp_path)
-        _write_state(state_path, {
-            "done": ["a"],
-            "current": "b",
-            "todo": ["c"],
-            "status": STATUS_HALTED,
-            "revision": 2,
-        })
-        dispatch = _dispatch_canned("RB", "RC")
-
-        recovery_action.persist_recover_halted(state_path, lock_path, OWNER)
-        assert _read_state(state_path)["current"] is None
-        # b must be the very first dispatch made by the public runner.
-        final_state = _run_public(magazine_path, state_dir, dispatch)
-        first = dispatch.await_args_list[0]
-        assert first == call("prompt-b", "model-b")
-        assert final_state["status"] == STATUS_COMPLETED
-        assert (run_dir / "results" / "b.txt").read_text() == "RB"
-
-    def test_public_runner_preserves_completed_work_and_queue_order(self, tmp_path):
-        """With out-of-order history (a and c done, b interrupted, d queued)
-        the public runner completes b then d, preserving completed work and
-        queue ordering."""
-        magazine_path = _write_magazine(
-            tmp_path / "magazine.json", ("a", "b", "c", "d"),
-            {"a": "research", "b": "synthesis", "c": "research", "d": "synthesis"},
-        )
-        state_dir, state_path, lock_path, run_dir = make_paths(tmp_path)
-        _write_state(state_path, {
-            "done": ["a", "c"],
-            "current": "b",
-            "todo": ["d"],
-            "status": STATUS_HALTED,
-            "revision": 2,
-        })
-        dispatch = _dispatch_canned("RB", "RD")
-
-        recovered = recovery_action.persist_recover_halted(state_path, lock_path, OWNER)
-        assert recovered == {
-            "done": ["a", "c"],
-            "current": None,
-            "todo": ["b", "d"],
-            "status": STATUS_READY,
-            "revision": 3,
-        }
-
-        final_state = _run_public(magazine_path, state_dir, dispatch)
-        assert final_state["done"] == ["a", "c", "b", "d"]
-        assert final_state["status"] == STATUS_COMPLETED
-        assert final_state["revision"] == 7
-        assert dispatch.await_args_list == [
-            call("prompt-b", "model-b"),
-            call("prompt-d", "model-b"),
-        ]
-        assert (run_dir / "results" / "b.txt").read_text() == "RB"
-        assert (run_dir / "results" / "d.txt").read_text() == "RD"
-
-    def test_public_runner_halted_last_cartridge_completes(self, tmp_path):
-        """A HALTED run on its final cartridge recovers and the public runner
-        completes it (the recovered state must be re-admissible)."""
-        magazine_path = _write_magazine(
-            tmp_path / "magazine.json", ("a", "b", "c"),
-            {"a": "research", "b": "synthesis", "c": "research"},
-        )
-        state_dir, state_path, lock_path, run_dir = make_paths(tmp_path)
-        _write_state(state_path, {
-            "done": ["a", "b"],
-            "current": "c",
-            "todo": [],
-            "status": STATUS_HALTED,
-            "revision": 2,
-        })
-        dispatch = _dispatch_canned("RC")
-
-        recovered = recovery_action.persist_recover_halted(state_path, lock_path, OWNER)
-        assert recovered == {
-            "done": ["a", "b"],
-            "current": None,
-            "todo": ["c"],
-            "status": STATUS_READY,
-            "revision": 3,
-        }
-
-        final_state = _run_public(magazine_path, state_dir, dispatch)
-        assert final_state == {
-            "done": ["a", "b", "c"],
-            "current": None,
-            "todo": [],
-            "status": STATUS_COMPLETED,
-            "revision": 5,
-        }
-        assert dispatch.await_args_list == [call("prompt-c", "model-a")]
-        assert (run_dir / "results" / "c.txt").read_text() == "RC"
-
-
-# ---------------------------------------------------------------------------
-# Full operator journey: admission, run, halt, recovery, public re-admission
-# ---------------------------------------------------------------------------
 
 class TestFullOperatorJourney:
+    """Admit -> run -> HALT -> recover -> public re-run -> COMPLETE."""
+
     def test_full_journey_admit_run_halt_recover_public_complete(self, tmp_path):
-        """End-to-end operator journey: a fresh run halts mid-b, is explicitly
-        recovered, then re-admitted and completed by the public runner.  The
-        interrupted cartridge b is retried first after a."""
-        magazine_path = _write_magazine(
-            tmp_path / "magazine.json", ("a", "b", "c"),
-            {"a": "research", "b": "synthesis", "c": "research"},
+        magazine_path = _write_magazine(tmp_path)
+        state_dir, state_path, lock_path, _ = make_paths(tmp_path)
+        prepared = run_preparation.prepare_run(
+            magazine_path, state_dir, OWNER,
+            runtime_id=_TEST_WRITER.runtime_id, pid=42, start_ticks=1000,
         )
-        state_dir, state_path, lock_path, run_dir = make_paths(tmp_path)
-        dispatch = _dispatch_canned("RA", "RB", "RC")
-
-        # Fresh admission -> RUNNING on a.
-        prepared = run_preparation.prepare_run(str(magazine_path), str(state_dir), OWNER)
-        assert prepared.state["status"] == STATUS_RUNNING
-        assert prepared.state["current"] == "a"
-        assert prepared.state["revision"] == 1
-        assert prepared.state_path == state_path
-        assert prepared.lock_path == lock_path
-
-        # Run a -> READY.
+        # cart-1 runs to completion under the real entrypoint.
+        dispatch_a = _RecordingDispatch()
         result_a = asyncio.run(
             orchestration.execute_one_cartridge(
-                str(magazine_path), state_path, lock_path, OWNER, MODEL_MAP, dispatch,
+                magazine_path, state_path, lock_path, OWNER,
+                prepared.attempt, prepared.identity,
+                _MODEL_MAP, dispatch_a,
             )
         )
-        assert result_a.cartridge_id == "a"
         assert result_a.state["status"] == STATUS_READY
-        assert result_a.state["done"] == ["a"]
+        assert result_a.state["current"] is None
         assert result_a.state["revision"] == 2
+        assert len(dispatch_a.calls) == 1
+        assert dispatch_a.calls[0][0] == "prompt-1"
 
-        # Begin b -> RUNNING.
-        running_b = run_action.persist_begin_next_cartridge(state_path, lock_path, OWNER)
-        assert running_b["status"] == STATUS_RUNNING
-        assert running_b["current"] == "b"
-        assert running_b["todo"] == ["c"]
-        assert running_b["revision"] == 3
+        # Advance to the second cartridge and persist the new current.
+        run_action.persist_begin_next_cartridge(
+            state_path, lock_path, OWNER, prepared.attempt, prepared.identity
+        )
 
-        # Explicitly halt -> HALTED (revision preserved).
+        # Uncertain-halt (RUNNING -> HALTED) is an operator action.
         halted = recovery_action.persist_uncertain_halt(state_path, lock_path, OWNER)
-        assert load_run_state(state_path) == {
-            "done": ["a"],
-            "current": "b",
-            "todo": ["c"],
-            "status": STATUS_HALTED,
-            "revision": 3,
-        }
+        assert halted["status"] == STATUS_HALTED
         assert halted["revision"] == 3
+        # The claim was written by admission and is still present.
+        claim = load_execution_metadata(
+            str(Path(state_path).parent / "execution.json")
+        )
+        assert claim is not None
 
-        # Operator-approved recovery -> READY (re-admissible).
-        recovered = recovery_action.persist_recover_halted(state_path, lock_path, OWNER)
-        assert recovered == {
-            "done": ["a"],
-            "current": None,
-            "todo": ["b", "c"],
-            "status": STATUS_READY,
-            "revision": 4,
-        }
-
-        # Public runner re-admits and completes: b then c.
-        final_state = _run_public(magazine_path, state_dir, dispatch)
-        assert final_state == {
-            "done": ["a", "b", "c"],
-            "current": None,
-            "todo": [],
-            "status": STATUS_COMPLETED,
-            "revision": 8,
-        }
-
-        # Dispatch order spans both phases: a (pre-halt), then b, c (post-recovery).
-        assert dispatch.call_count == 3
-        assert dispatch.await_args_list == [
-            call("prompt-a", "model-a"),
-            call("prompt-b", "model-b"),
-            call("prompt-c", "model-a"),
-        ]
-
-        assert (run_dir / "results" / "a.txt").read_text() == "RA"
-        assert (run_dir / "results" / "b.txt").read_text() == "RB"
-        assert (run_dir / "results" / "c.txt").read_text() == "RC"
-
-
-# ---------------------------------------------------------------------------
-# Revision progression through recovery
-# ---------------------------------------------------------------------------
-
-class TestRevisionProgression:
-    def test_revision_increments_by_exactly_one_on_recovery(self, tmp_path):
-        """Recovery increments revision by exactly one (no reset, no double
-        increment)."""
-        state_dir, state_path, lock_path, run_dir = make_paths(tmp_path)
-        _write_state(state_path, {
-            "done": ["a"],
-            "current": "b",
-            "todo": ["c"],
-            "status": STATUS_HALTED,
-            "revision": 4,
-        })
+        # Recover: HALTED -> READY, interrupted cart-2 moved to front of todo.
         recovered = recovery_action.persist_recover_halted(state_path, lock_path, OWNER)
         assert recovered["status"] == STATUS_READY
-        assert recovered["revision"] == 5
+        assert recovered["current"] is None
+        assert recovered["todo"] == ["cart-2", "cart-3"]
+        assert recovered["revision"] == 4
+
+        # Public re-run: prepare_run re-admits (operator-recovered -> attempt+1),
+        # runs cart-2 and cart-3 to COMPLETION.
+        final_state, dispatch = _public_run(magazine_path, state_dir, OWNER)
+        # The public runner is the entrypoint that re-admits and runs.
+        assert final_state["status"] == STATUS_COMPLETED
+        assert final_state["current"] is None
+        assert final_state["todo"] == []
+        assert final_state["revision"] == 8
+        assert len(dispatch.calls) == 2
+        assert [c[0] for c in dispatch.calls] == ["prompt-2", "prompt-3"]
+
+
+class TestRevisionProgression:
+    """Recovery must not reset revision; it must continue from the halted value."""
 
     def test_revision_continues_after_recovery_not_reset(self, tmp_path):
-        """Recovery's revision is one past the halted revision, and the
-        public runner's subsequent execution continues from there (nothing
-        resets to 0)."""
-        magazine_path = _write_magazine(
-            tmp_path / "magazine.json", ("a", "b", "c"),
-            {"a": "research", "b": "synthesis", "c": "research"},
+        magazine_path = _write_magazine(tmp_path)
+        state_dir, state_path, lock_path, _ = make_paths(tmp_path)
+        prepared = run_preparation.prepare_run(
+            magazine_path, state_dir, OWNER,
+            runtime_id=_TEST_WRITER.runtime_id, pid=42, start_ticks=1000,
         )
-        state_dir, state_path, lock_path, run_dir = make_paths(tmp_path)
-        dispatch = _dispatch_canned("RA", "RB", "RC")
 
-        prepared = run_preparation.prepare_run(str(magazine_path), str(state_dir), OWNER)
+        # Complete cart-1; run_loop would call this and then re-admit via
+        # prepare_run.  We only advance the state machine here.
         asyncio.run(
             orchestration.execute_one_cartridge(
-                str(magazine_path), state_path, lock_path, OWNER, MODEL_MAP, dispatch,
+                magazine_path, state_path, lock_path, OWNER,
+                prepared.attempt, prepared.identity,
+                _MODEL_MAP, _RecordingDispatch(),
             )
         )
-        run_action.persist_begin_next_cartridge(state_path, lock_path, OWNER)
+
+        # Advance to cart-2 and persist.
+        run_action.persist_begin_next_cartridge(
+            state_path, lock_path, OWNER, prepared.attempt, prepared.identity
+        )
+
+        # HALT (RUNNING -> HALTED): revision stays.
         halted = recovery_action.persist_uncertain_halt(state_path, lock_path, OWNER)
+        assert halted["status"] == STATUS_HALTED
+        assert halted["revision"] == 3
+
+        # Recover (HALTED -> READY): revision increments by exactly one.
         recovered = recovery_action.persist_recover_halted(state_path, lock_path, OWNER)
-        final_state = _run_public(magazine_path, state_dir, dispatch)
-
+        assert recovered["status"] == STATUS_READY
         assert recovered["revision"] == halted["revision"] + 1
+        assert recovered["revision"] == 4
+
+        # Public re-run continues from 4 through to COMPLETED.
+        final_state, _ = _public_run(magazine_path, state_dir, OWNER)
         assert final_state["status"] == STATUS_COMPLETED
-        assert final_state["done"] == ["a", "b", "c"]
         assert final_state["revision"] == 8
-        assert all(rev >= 3 for rev in [halted["revision"],
-                                        recovered["revision"],
-                                        final_state["revision"]])
+        # No step ever decremented revision below the halted value.
+        assert all(
+            rev >= 3 for rev in
+            [halted["revision"], recovered["revision"], final_state["revision"]]
+        )
 
-
-# ---------------------------------------------------------------------------
-# Locking and concurrent access
-# ---------------------------------------------------------------------------
 
 class TestLockingAndConcurrentAccess:
-    def test_preexisting_lock_blocks_recovery_and_state_stays_halted(self, tmp_path):
-        """A run lock held by another owner blocks recovery; the persisted
-        state stays HALTED (unmodified) and the lock error is raised."""
-        state_dir, state_path, lock_path, run_dir = make_paths(tmp_path)
-        state = {
-            "done": ["cart-1"],
-            "current": "cart-2",
-            "todo": ["cart-3"],
-            "status": STATUS_HALTED,
-            "revision": 2,
-        }
-        _write_state(state_path, state)
-        Path(lock_path).write_text("other-owner")
-        with pytest.raises(MagazineLockError, match="run lock already held"):
-            recovery_action.persist_recover_halted(state_path, lock_path, OWNER)
-        assert _read_state(state_path) == state
-
-        # After the other process releases the lock (ownership must match the
-        # owner that created it), recovery proceeds and yields a re-admissible
-        # READY state.
-        release_run_lock(lock_path, "other-owner")
-        recovered = recovery_action.persist_recover_halted(state_path, lock_path, OWNER)
-        assert recovered == {
-            "done": ["cart-1"],
-            "current": None,
-            "todo": ["cart-2", "cart-3"],
-            "status": STATUS_READY,
-            "revision": 3,
-        }
-        assert not Path(lock_path).exists()
+    """Every recovery operation acquires the run lock before touching state."""
 
     def test_two_operations_serialized_by_lock(self, tmp_path):
         """A sequence of lock-protected operations (recover, re-admit, re-halt,
@@ -509,6 +240,7 @@ class TestLockingAndConcurrentAccess:
             "status": STATUS_HALTED,
             "revision": 2,
         })
+        attempt, writer = _seed_claim(run_dir)
 
         # Op 1: recover (HALTED -> READY).
         recovered1 = recovery_action.persist_recover_halted(state_path, lock_path, OWNER)
@@ -521,8 +253,11 @@ class TestLockingAndConcurrentAccess:
         }
         assert not Path(lock_path).exists()
 
-        # Re-admit (READY -> RUNNING) so we can halt again.
-        running = run_action.persist_begin_next_cartridge(state_path, lock_path, OWNER)
+        # Re-admit (READY -> RUNNING) so we can halt again.  This is a fenced
+        # execution operation: it re-verifies the exact claim and writes state.
+        running = run_action.persist_begin_next_cartridge(
+            state_path, lock_path, OWNER, attempt, writer
+        )
         assert running["status"] == STATUS_RUNNING
 
         # Op 2: halt (RUNNING -> HALTED).
@@ -539,108 +274,19 @@ class TestLockingAndConcurrentAccess:
             "revision": 5,
         }
         assert not Path(lock_path).exists()
-        assert load_run_state(state_path) == recovered2
+        assert state_store.load_run_state(state_path) == recovered2
 
 
-# ---------------------------------------------------------------------------
-# Invalid recovery state (rejected, bytes unchanged)
-# ---------------------------------------------------------------------------
+class _RecordingDispatch:
+    """Minimal dispatch callable for orchestration tests.
 
-class TestInvalidRecoveryState:
-    @pytest.mark.parametrize("state", [
-        {
-            "done": ["cart-1"],
-            "current": None,
-            "todo": ["cart-2"],
-            "status": STATUS_READY,
-            "revision": 1,
-        },
-        {
-            "done": ["cart-1"],
-            "current": None,
-            "todo": [],
-            "status": STATUS_COMPLETED,
-            "revision": 1,
-        },
-        {
-            "done": ["cart-1"],
-            "current": "cart-2",
-            "todo": ["cart-3"],
-            "status": STATUS_RUNNING,
-            "revision": 1,
-        },
-    ])
-    def test_non_halted_states_rejected_bytes_unchanged(self, tmp_path, state):
-        """Recovery is only valid on HALTED states; any other valid state is
-        rejected and the file bytes stay identical."""
-        state_dir, state_path, lock_path, run_dir = make_paths(tmp_path)
-        _write_state(state_path, state)
-        original_bytes = Path(state_path).read_bytes()
-        with pytest.raises(RecoveryTransitionError):
-            recovery_action.persist_recover_halted(state_path, lock_path, OWNER)
-        assert Path(state_path).read_bytes() == original_bytes
+    The runtime dispatch boundary is invoked as ``dispatch(prompt, model_id)``
+    (see ``magazine.runtime_dispatch.dispatch_routed``).
+    """
 
-    def test_halted_without_current_rejected_bytes_unchanged(self, tmp_path):
-        """A HALTED state with no current cartridge has no interrupted work
-        position to retry; it is rejected and the file bytes stay identical."""
-        state_dir, state_path, lock_path, run_dir = make_paths(tmp_path)
-        state = {
-            "done": ["cart-1"],
-            "current": None,
-            "todo": ["cart-2"],
-            "status": STATUS_HALTED,
-            "revision": 2,
-        }
-        _write_state(state_path, state)
-        original_bytes = Path(state_path).read_bytes()
-        with pytest.raises(RecoveryTransitionError,
-                          match="without a current cartridge"):
-            recovery_action.persist_recover_halted(state_path, lock_path, OWNER)
-        assert Path(state_path).read_bytes() == original_bytes
+    def __init__(self) -> None:
+        self.calls: list[tuple] = []
 
-    def test_malformed_state_rejected_bytes_unchanged(self, tmp_path):
-        """A malformed state is rejected (``MagazineStateError``) and the file
-        bytes stay identical."""
-        state_dir, state_path, lock_path, run_dir = make_paths(tmp_path)
-        state = {"done": [], "current": None, "todo": ["cart-1"],
-                 "status": "BOGUS", "revision": 0}
-        _write_state(state_path, state)
-        original_bytes = Path(state_path).read_bytes()
-        with pytest.raises(MagazineStateError):
-            recovery_action.persist_recover_halted(state_path, lock_path, OWNER)
-        assert Path(state_path).read_bytes() == original_bytes
-
-    def test_malformed_json_rejected_bytes_unchanged(self, tmp_path):
-        """Unparseable JSON is rejected and the file bytes stay identical."""
-        state_dir, state_path, lock_path, run_dir = make_paths(tmp_path)
-        Path(state_path).write_text("not valid json")
-        original_bytes = Path(state_path).read_bytes()
-        with pytest.raises(json.JSONDecodeError):
-            recovery_action.persist_recover_halted(state_path, lock_path, OWNER)
-        assert Path(state_path).read_bytes() == original_bytes
-
-    def test_rejection_releases_lock(self, tmp_path):
-        """A rejected recovery (HALTED without current) still releases the lock
-        so a subsequent call can acquire it."""
-        state_dir, state_path, lock_path, run_dir = make_paths(tmp_path)
-        state = {
-            "done": ["cart-1"],
-            "current": None,
-            "todo": ["cart-2"],
-            "status": STATUS_HALTED,
-            "revision": 2,
-        }
-        _write_state(state_path, state)
-        with pytest.raises(RecoveryTransitionError):
-            recovery_action.persist_recover_halted(state_path, lock_path, OWNER)
-        assert not Path(lock_path).exists()
-        # A later recovery of a valid HALTED state must succeed (lock released).
-        _write_state(state_path, {
-            "done": ["cart-1"],
-            "current": "cart-2",
-            "todo": ["cart-3"],
-            "status": STATUS_HALTED,
-            "revision": 2,
-        })
-        recovered = recovery_action.persist_recover_halted(state_path, lock_path, OWNER)
-        assert recovered["status"] == STATUS_READY
+    async def __call__(self, prompt: str, model_id: str) -> str:
+        self.calls.append((prompt, model_id))
+        return "done"

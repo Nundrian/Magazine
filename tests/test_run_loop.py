@@ -6,10 +6,31 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from magazine import run_loop
+from magazine.execution_meta import ExecutionMetadata, save_execution_metadata, utc_now_iso
+from magazine.runtime_identity import RuntimeIdentity
 from magazine.state import STATUS_COMPLETED, STATUS_RUNNING
 from magazine.state_store import load_run_state, save_run_state
 
 MODEL_MAP = {"research": "model-a", "synthesis": "model-b"}
+
+_TEST_WRITER = RuntimeIdentity(runtime_id="0" * 32, pid=42, start_ticks=1000)
+
+
+def _claim(run_dir):
+    """Persist the run's execution-ownership claim (attempt 1, test writer)."""
+    save_execution_metadata(
+        str(run_dir / "execution.json"),
+        ExecutionMetadata(
+            attempt=1,
+            runtime_id=_TEST_WRITER.runtime_id,
+            pid=_TEST_WRITER.pid,
+            start_ticks=_TEST_WRITER.start_ticks,
+            created_at=utc_now_iso(),
+            halted_by=None,
+            halted_at=None,
+            halt_reason=None,
+        ),
+    )
 
 
 def _setup(tmp_path):
@@ -23,6 +44,7 @@ def _setup(tmp_path):
     save_run_state(str(state_path), {
         "done": [], "current":"a", "todo":["b"], "status":STATUS_RUNNING, "revision":1
     })
+    _claim(run_dir)
     return mag, run_dir, state_path, lock_path
 
 
@@ -30,7 +52,8 @@ def test_runs_two_cartridges_in_order_to_completion(tmp_path):
     mag, run_dir, state_path, lock_path = _setup(tmp_path)
     dispatch = AsyncMock(side_effect=["RA", "RB"])
     result = asyncio.run(run_loop.run_all_cartridges(
-        str(mag), str(state_path), str(lock_path), "owner", MODEL_MAP, dispatch
+        str(mag), str(state_path), str(lock_path), "owner",
+        1, _TEST_WRITER, MODEL_MAP, dispatch
     ))
     assert result.final_state["status"] == STATUS_COMPLETED
     assert result.final_state["done"] == ["a", "b"]
@@ -45,7 +68,8 @@ def test_stops_on_second_dispatch_failure(tmp_path):
     dispatch = AsyncMock(side_effect=["RA", RuntimeError("boom")])
     with pytest.raises(RuntimeError, match="boom"):
         asyncio.run(run_loop.run_all_cartridges(
-            str(mag), str(state_path), str(lock_path), "owner", MODEL_MAP, dispatch
+            str(mag), str(state_path), str(lock_path), "owner",
+            1, _TEST_WRITER, MODEL_MAP, dispatch
         ))
     state = load_run_state(str(state_path))
     assert state["done"] == ["a"]
@@ -61,7 +85,7 @@ def test_final_completed_state_does_not_begin_next(mock_execute, mock_begin):
     final = {"status": STATUS_COMPLETED}
     mock_execute.return_value = type("R", (), {"state": final})()
     result = asyncio.run(run_loop.run_all_cartridges(
-        "mag", "state", "lock", "owner", MODEL_MAP, object()
+        "mag", "state", "lock", "owner", 1, _TEST_WRITER, MODEL_MAP, object()
     ))
     assert result.final_state is final
     mock_begin.assert_not_called()
@@ -72,7 +96,7 @@ def test_unexpected_post_completion_status_fails(mock_execute):
     mock_execute.return_value = type("R", (), {"state": {"status": "HALTED"}})()
     with pytest.raises(RuntimeError, match="unexpected post-completion"):
         asyncio.run(run_loop.run_all_cartridges(
-            "mag", "state", "lock", "owner", MODEL_MAP, object()
+            "mag", "state", "lock", "owner", 1, _TEST_WRITER, MODEL_MAP, object()
         ))
 
 
@@ -98,7 +122,8 @@ def test_multi_cartridge_cleanup_each_chat_independently(tmp_path):
     mag, run_dir, state_path, lock_path = _setup(tmp_path)
     dispatch = _CleanupTrackingDispatch(["RA", "RB"])
     result = asyncio.run(run_loop.run_all_cartridges(
-        str(mag), str(state_path), str(lock_path), "owner", MODEL_MAP, dispatch
+        str(mag), str(state_path), str(lock_path), "owner",
+        1, _TEST_WRITER, MODEL_MAP, dispatch
     ))
     assert result.final_state["status"] == STATUS_COMPLETED
     # Both cartridges dispatched through the same injected callable...

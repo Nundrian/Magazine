@@ -32,6 +32,7 @@ from magazine import document
 from magazine import run_action
 from magazine import run_lock
 from magazine import state
+from magazine.runtime_identity import RuntimeIdentity
 
 
 __all__ = ["PreparedRun", "prepare_run"]
@@ -45,18 +46,25 @@ class PreparedRun:
     :func:`magazine.run_action.persist_admit_run` — not a copy re-read from
     disk.  :attr:`state_path` and :attr:`lock_path` are the exact paths used
     for that admission, derived once, so a consuming runner need not recompute
-    them.
+    them.  :attr:`attempt` is the execution-attempt number assigned by that
+    admission (0 for terminal states that are returned unchanged), and
+    :attr:`identity` is the runtime identity that owns the claim.
     """
 
     state: dict
     state_path: str
     lock_path: str
+    attempt: int = 0
+    identity: RuntimeIdentity | None = None
 
 
 def prepare_run(
     magazine_path: str,
     state_dir: str,
     owner_id: str,
+    runtime_id: str | None = None,
+    pid: int | None = None,
+    start_ticks: int | None = None,
 ) -> PreparedRun:
     """Load, validate, and admit a first run; return a :class:`PreparedRun`.
 
@@ -65,11 +73,17 @@ def prepare_run(
             Magazine folder, or ``.magazine`` archive package).
         state_dir: Directory containing the run/ state subdirectory.
         owner_id: Owner ID written into the run lock.
+        runtime_id / pid / start_ticks: Optional explicit runtime identity for
+            the execution claim.  All three must be supplied together (or all
+            omitted); a *partial* set is not accepted, in which case the live
+            process identity from ``magazine.runtime_identity`` is used.
 
     Returns:
         A :class:`PreparedRun` whose ``state`` is the exact dict returned by
-        :func:`magazine.run_action.persist_admit_run` and whose ``state_path`` /
-        ``lock_path`` are the paths that admission used.
+        :func:`magazine.run_action.persist_admit_run`, whose ``state_path`` /
+        ``lock_path`` are the paths that admission used, whose ``attempt`` is
+        the assigned execution-attempt number, and whose ``identity`` is the
+        runtime identity that owns the claim.
 
     Raises:
         All exceptions from the individual steps propagate unchanged (schema
@@ -102,20 +116,33 @@ def prepare_run(
     state_path = str(run_dir / "state.json")
     lock_path = str(run_dir / ".lock")
 
-    # 4. Atomic first-run admission.  persist_admit_run acquires the run lock
-    #    BEFORE checking the state file, creates the state file as a fresh
-    #    READY only when it is missing (still under that lock), then branches
-    #    on the freshly-loaded status: READY -> RUNNING, COMPLETED / HALTED
-    #    returned unchanged, RUNNING -> RunAdmissionError.  The lock is released
-    #    before the call returns; this caller acquires no lock of its own.
-    admitted = run_action.persist_admit_run(
-        state_path, lock_path, owner_id, cartridge_ids
+    # 4. Atomic first-run admission.  The runtime identity is resolved once
+    #    (all-or-nothing) and handed to persist_admit_run, so the durable claim
+    #    and the :class:`PreparedRun.identity` always carry the same identity.
+    #    persist_admit_run acquires the run lock BEFORE checking the state file,
+    #    creates the state file as a fresh READY only when it is missing (still
+    #    under that lock), then branches on the freshly-loaded status: READY ->
+    #    RUNNING, COMPLETED / HALTED returned unchanged, RUNNING ->
+    #    RunAdmissionError.  The lock is released before the call returns; this
+    #    caller acquires no lock of its own.
+    identity = run_action.resolve_runtime_identity(runtime_id, pid, start_ticks)
+    admitted_state, attempt = run_action.persist_admit_run(
+        state_path,
+        lock_path,
+        owner_id,
+        cartridge_ids,
+        identity.runtime_id,
+        identity.pid,
+        identity.start_ticks,
     )
 
-    # 6. Return the exact admitted state and the once-derived paths.  The
-    #    state is never re-read from disk.
+    # 5. Return the exact admitted state, the once-derived paths, the assigned
+    #    attempt number, and the owning identity.  The state is never re-read
+    #    from disk.
     return PreparedRun(
-        state=admitted,
+        state=admitted_state,
         state_path=state_path,
         lock_path=lock_path,
+        attempt=attempt,
+        identity=identity,
     )

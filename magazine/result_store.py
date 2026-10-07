@@ -10,6 +10,22 @@ protocol of :mod:`magazine.durability` (temp file in the target directory,
 file fsync before the atomic ``os.replace``, directory fsync afterwards
 where supported).
 
+Slice 2 execution ownership
+---------------------------
+The result write is *fenced*, not merely locked.  Under the same run-lock hold,
+the writer's exact execution-ownership claim (``attempt`` + ``runtime_id``
+from ``execution.json``) is verified, and the run's freshly-loaded status must
+still be ``RUNNING``.  The verification and the mutation are serialized under a
+*single* lock acquisition, closing the TOCTOU window between a "check" and the
+durable write:
+
+    with run lock held:
+        claim  = load_execution_metadata(...)          # (1) fencing claim
+        verify claim.attempt == writer_attempt and
+               claim.runtime_id == writer_identity.runtime_id
+        state  = load_run_state(...)                  # (2) fresh, not a
+        verify state.status == RUNNING                #     cached snapshot
+
 Path convention
 ---------------
 ``<run_dir>/results/<safe_token>.txt`` where ``run_dir`` is the directory that
@@ -25,7 +41,9 @@ primitive (``magazine.paths.resolve_contained_path``) so the derived path is
 guaranteed to stay inside the run-owned ``results/`` directory.
 
 Only a successful dispatch's result is persisted: a failed dispatch (or a
-failed write) never reaches the guarded completion boundary.
+failed write) never reaches the guarded completion boundary.  The fenced
+``save_cartridge_result`` is the *only* writer of a result; a stale executor's
+rejected write is an error (it is never a run-side transition).
 """
 
 from __future__ import annotations
@@ -33,9 +51,16 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+from contextlib import contextmanager
 
 from magazine.durability import atomic_write
-from magazine.paths import resolve_contained_path
+from magazine.execution_meta import ExecutionOwnershipError, load_execution_metadata
+from magazine.paths import execution_file_path, resolve_contained_path
+from magazine.run_lock import acquire_run_lock, release_run_lock
+from magazine.run_transition import RunTransitionError
+from magazine.runtime_identity import RuntimeIdentity
+from magazine.state import STATUS_RUNNING
+from magazine.state_store import load_run_state
 
 __all__ = ["result_path", "save_cartridge_result"]
 
@@ -52,7 +77,7 @@ _SAFE_TOKEN_RE = re.compile(r"[^A-Za-z0-9._-]")
 
 # Reserved namespace for fingerprinted result files.  Filenames of the form
 # ``__sha256__<hex>`` are always produced by :func:`_safe_file_name`'s hashing
-# branch; no literal, all-safe cartridge ID may return its token unchanged while
+# branch; no literal safe cartridge ID may return its token unchanged while
 # beginning with this prefix, otherwise a literal ID could occupy the hashed
 # namespace and collide with a hashed ID.
 _HASH_PREFIX = "__sha256__"
@@ -139,18 +164,49 @@ def result_path(run_dir: str, cartridge_id: str) -> str:
     return os.path.join(run_dir, "results", f"{token}.txt")
 
 
-def save_cartridge_result(run_dir: str, cartridge_id: str, text: object) -> str:
+@contextmanager
+def _hold_run_lock(lock_path: str, owner_id: str):
+    """Acquire the run lock for the body and release it (always).
+
+    The body performs the ownership verification *and* the durable write while
+    the lock is held, so the check and the mutation are serialised against every
+    other executor of the run.
+    """
+    acquire_run_lock(lock_path, owner_id)
+    try:
+        yield
+    finally:
+        release_run_lock(lock_path, owner_id)
+
+
+def save_cartridge_result(
+    run_dir: str,
+    cartridge_id: str,
+    text: object,
+    lock_path: str,
+    owner_id: str,
+    writer_attempt: int,
+    writer_identity: RuntimeIdentity,
+) -> str:
     """Persist the exact returned model result durably.
 
-    The result is written UTF-8, atomically and crash-durably, to ``result_path(run_dir,
-    cartridge_id)`` via :mod:`magazine.durability`'s shared durable atomic
-    write: ``tempfile.mkstemp`` in the target directory (so ``os.replace`` is
-    atomic), a binary write of the UTF-8 bytes, ``f.flush()`` and ``fsync`` of
-    the temporary file before the atomic ``os.replace`` (new contents reach
-    stable storage before the swap), then a fsync of the containing directory
-    where the platform supports directory fsync (best-effort no-op on
-    platforms that do not, e.g. Windows).  The temporary file is unlinked on
-    any failure before the swap.
+    The result is written UTF-8, atomically and crash-durably, to
+    ``result_path(run_dir, cartridge_id)`` via :mod:`magazine.durability`'s shared
+    durable atomic write: ``tempfile.mkstemp`` in the target directory (so
+    ``os.replace`` is atomic), a binary write of the UTF-8 bytes, ``f.flush()``
+    and ``fsync`` of the temporary file before the atomic ``os.replace`` (new
+    contents reach stable storage before the swap), then a fsync of the
+    containing directory where the platform supports directory fsync (best-effort
+    no-op on platforms that do not, e.g. Windows).  The temporary file is
+    unlinked on any failure before the swap.
+
+    Slice 2 fencing: under the run lock the writer's execution-ownership claim
+    is verified (``execution.json`` must exist and its ``attempt`` /
+    ``runtime_id`` must exactly match ``writer_attempt`` /
+    ``writer_identity.runtime_id``), and the freshly-loaded run status must be
+    ``RUNNING``.  These checks and the write share one lock acquisition, so no
+    stale executor (a different ``attempt`` / ``runtime_id``) or a run that is
+    no longer ``RUNNING`` can persist a result.
 
     Parameters
     ----------
@@ -162,6 +218,15 @@ def save_cartridge_result(run_dir: str, cartridge_id: str, text: object) -> str:
         The model result to persist (the ``dispatch_result``).  Any ``str`` is
         written byte-for-byte; non-``str`` values are coerced via ``str()``
         (the run loop's sentinel pattern) so a result is never lost.
+    lock_path:
+        Path of the run's lock file, acquired while the write proceeds.
+    owner_id:
+        The owner identifier for the lock acquisition.
+    writer_attempt:
+        The ``attempt`` the writer claims as its current execution identity.
+    writer_identity:
+        The ``RuntimeIdentity`` of the writer; ``runtime_id`` is the fencing
+        identity.
 
     Returns
     -------
@@ -170,18 +235,46 @@ def save_cartridge_result(run_dir: str, cartridge_id: str, text: object) -> str:
 
     Raises
     ------
+    ExecutionOwnershipError
+        If the claim is missing or its ``attempt`` / ``runtime_id`` do not
+        exactly match the writer's identity, or if the run's status is not
+        ``RUNNING``.  The result is not written; the run state is untouched.
     OSError
         If the atomic write fails (disk error, ``results`` directory not
-        creatable, etc.).  The run state is left untouched by this failure.
+        creatable, etc.).
     ValueError
         If the derived path would escape ``<run_dir>/results`` (from
         :func:`result_path`; unattainable for a sanitized token).
     """
-    dest = result_path(run_dir, cartridge_id)
-    results_dir = os.path.join(run_dir, "results")
-    os.makedirs(results_dir, exist_ok=True)
-    data = (
-        text.encode("utf-8") if isinstance(text, str) else str(text).encode("utf-8")
-    )
-    atomic_write(dest, data, prefix=".result_", suffix=".tmp")
-    return dest
+    state_path = os.path.join(run_dir, "state.json")
+    execution_path = execution_file_path(run_dir)
+
+    with _hold_run_lock(lock_path, owner_id):
+        # (1) Fencing claim: exact ownership identity under the same lock hold.
+        claim = load_execution_metadata(execution_path)
+        if claim is None:
+            raise ExecutionOwnershipError(
+                f"execution ownership claim not found at {execution_path}"
+            )
+        if claim.attempt != writer_attempt or claim.runtime_id != writer_identity.runtime_id:
+            raise ExecutionOwnershipError(
+                f"execution ownership mismatch: claim={claim.attempt}/{claim.runtime_id} "
+                f"writer={writer_attempt}/{writer_identity.runtime_id}"
+            )
+        # (2) Fresh state: the run must still be RUNNING (no cached snapshot).
+        state = load_run_state(state_path)
+        if state.get("status") != STATUS_RUNNING:
+            raise RunTransitionError(
+                f"cannot save result for run in status {state.get('status')}; "
+                f"expected {STATUS_RUNNING}"
+            )
+
+        # Durable write, still under the same lock hold.
+        dest = result_path(run_dir, cartridge_id)
+        results_dir = os.path.join(run_dir, "results")
+        os.makedirs(results_dir, exist_ok=True)
+        data = (
+            text.encode("utf-8") if isinstance(text, str) else str(text).encode("utf-8")
+        )
+        atomic_write(dest, data, prefix=".result_", suffix=".tmp")
+        return dest

@@ -21,16 +21,23 @@ import pytest
 
 from magazine import run_loop, run_preparation
 from magazine.async_runner import run_magazine
+from magazine.runtime_identity import RuntimeIdentity
 from magazine.state import STATUS_COMPLETED, STATUS_HALTED, STATUS_READY, STATUS_RUNNING
 
 MODEL_MAP = {"research": "model-a", "synthesis": "model-b"}
+
+# Deterministic writer identity (Slice 2) carried on every prepared run.
+_TEST_WRITER = RuntimeIdentity(runtime_id="0" * 32, pid=42, start_ticks=1000)
 
 
 def _prepared(status):
     current = "a" if status in (STATUS_RUNNING, STATUS_HALTED) else None
     return run_preparation.PreparedRun(
         state={"done": [], "current": current, "todo": [], "status": status, "revision": 1},
-        state_path="/tmp/state.json", lock_path="/tmp/.lock"
+        state_path="/tmp/state.json",
+        lock_path="/tmp/.lock",
+        attempt=1,
+        identity=_TEST_WRITER,
     )
 
 
@@ -43,7 +50,9 @@ def test_running_delegates_exactly_once(mock_prepare, mock_loop):
     dispatch = object()
     result = asyncio.run(run_magazine("mag", "state-dir", "owner", MODEL_MAP, dispatch))
     mock_prepare.assert_called_once_with("mag", "state-dir", "owner")
-    mock_loop.assert_awaited_once_with("mag", "/tmp/state.json", "/tmp/.lock", "owner", MODEL_MAP, dispatch)
+    mock_loop.assert_awaited_once_with(
+        "mag", "/tmp/state.json", "/tmp/.lock", "owner", 1, _TEST_WRITER, MODEL_MAP, dispatch
+    )
     assert result is final
 
 

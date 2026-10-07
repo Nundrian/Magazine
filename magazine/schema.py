@@ -22,6 +22,18 @@ class MagazineSchemaError(Exception):
     """Raised when JSON validation fails."""
 
 
+class ExecutionOwnershipError(MagazineSchemaError):
+    """Raised when execution-ownership metadata is invalid or a write would
+    violate the execution-ownership claim.
+
+    Subclass of :class:`MagazineSchemaError` so execution.json validation
+    failures share the JSON-validation exception convention. The dedicated
+    type lets the fenced execution path fail closed on a broken fence (a
+    missing, malformed, or claim-mismatched ``execution.json``) without
+    collapsing it into a generic schema error.
+    """
+
+
 def _reject_inf(partial: str) -> str:
     """parse_constant callback: reject NaN / Infinity before they become strings."""
     raise MagazineSchemaError(f"JSON contains disallowed numeric value: {partial}")

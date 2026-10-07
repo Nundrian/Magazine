@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from magazine.schema import MagazineSchemaError, load_magazine_json, validate_schema_version, validate_cartridge, validate_magazine
+from magazine.execution_meta import validate_execution_metadata
+from magazine.schema import (ExecutionOwnershipError, MagazineSchemaError, load_magazine_json, validate_schema_version, validate_cartridge, validate_magazine)
+from magazine.runtime_identity import RUNTIME_ID_HEX_LENGTH
 
 
 class TestLoadMagazineJson:
@@ -182,3 +184,33 @@ class TestValidateMagazine:
                     {"id": "dup", "job_type": "translate", "prompt": "Translate."},
                 ],
             })
+
+
+class TestExecutionOwnershipError:
+    """ExecutionOwnershipError is the validation/fencing exception for the
+    execution-ownership metadata (the execution.json claim)."""
+
+    def test_is_a_magazineschemaerror_subclass(self) -> None:
+        assert issubclass(ExecutionOwnershipError, MagazineSchemaError)
+
+    def test_catch_as_magazineschemaerror(self) -> None:
+        # A caller written against the existing exception convention (the
+        # MagazineSchemaError family) can catch it uniformly.
+        try:
+            validate_execution_metadata({**self._base(), "attempt": 0})
+        except MagazineSchemaError as exc:
+            assert isinstance(exc, ExecutionOwnershipError)
+        else:
+            pytest.fail("expected ExecutionOwnershipError")
+
+    def _base(self) -> dict:
+        return {
+            "attempt": 1,
+            "runtime_id": RUNTIME_ID_HEX_LENGTH * "a",
+            "pid": 1234,
+            "start_ticks": 123456,
+            "created_at": "2026-01-01T00:00:00Z",
+            "halted_by": None,
+            "halted_at": None,
+            "halt_reason": None,
+        }

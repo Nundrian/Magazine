@@ -7,6 +7,13 @@ round-trip, non-string coercion (matching the ``object()`` sentinels that
 the orchestration happy-path tests feed through), re-dispatch overwrite,
 on-demand creation of ``results/``, and atomic failure (no partial/corrupt
 target, no orphaned temp file, exception propagated unchanged).
+
+Slice 2: every write is *fenced*, not merely locked.  Under the run lock the
+writer's exact execution-ownership claim (``attempt`` + ``runtime_id`` from
+``execution.json``) is verified, and the freshly-loaded run status must be
+``RUNNING``; the verification and the durable mutation share one lock
+acquisition (TOCTOU).  The helpers below seed those fence prerequisites
+deterministically.
 """
 
 from __future__ import annotations
@@ -21,7 +28,13 @@ import os
 import magazine.durability as durability
 
 from magazine import result_store
-
+from magazine.execution_meta import (
+    ExecutionMetadata,
+    save_execution_metadata,
+    utc_now_iso,
+)
+from magazine.runtime_identity import RuntimeIdentity
+from magazine.state_store import save_run_state
 
 # --- exact UTF-8 with Unicode, multi-byte chars, and multiple newlines ----
 _UNICODE_PAYLOAD = (
@@ -32,9 +45,70 @@ _UNICODE_PAYLOAD = (
     "final line, no trailing newline"
 )
 
+# Slice 2: deterministic writer identity (the exact ownership identity the fence
+# verifies).  A constant (rather than the live get_runtime_identity identity)
+# keeps every test self-contained and deterministic.
+_TEST_WRITER = RuntimeIdentity(
+    runtime_id="0" * 32,
+    pid=42,
+    start_ticks=1000,
+)
+_TEST_OWNER_ID = "owner"
+
 
 def _read_bytes(path: Path) -> bytes:
     return path.read_bytes()
+
+
+def _seed_claim_state(run_dir: Path) -> None:
+    """Idempotently seed the Slice-2 fence prerequisites: a fresh admission
+    claim (``execution.json``, ``attempt=1`` + the writer's ``runtime_id``) and
+    a ``RUNNING`` run state (``state.json``).  Must be called *before* any
+    protocol hooks are active so it does not pollute the protocol event list;
+    it writes real files through the ordinary (unpatched) atomic-write path.
+    """
+    run_dir = Path(run_dir)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    exec_path = run_dir / "execution.json"
+    if not exec_path.exists():
+        save_execution_metadata(
+            str(exec_path),
+            ExecutionMetadata(
+                attempt=1,
+                runtime_id=_TEST_WRITER.runtime_id,
+                pid=_TEST_WRITER.pid,
+                start_ticks=_TEST_WRITER.start_ticks,
+                created_at=utc_now_iso(),
+                halted_by=None,
+                halted_at=None,
+                halt_reason=None,
+            ),
+        )
+    state_path = run_dir / "state.json"
+    if not state_path.exists():
+        save_run_state(
+            str(state_path),
+            {
+                "done": [],
+                "current": "seeded",
+                "todo": [],
+                "status": "RUNNING",
+                "revision": 1,
+            },
+        )
+
+
+def _save(run_dir, cartridge_id, payload, lock_path=None) -> str:
+    """Convenience: seed the claim + ``RUNNING`` state if absent, then persist
+    the result through the Slice-2 fence.  Returns the durable result path."""
+    run_dir = Path(run_dir)
+    _seed_claim_state(run_dir)
+    if lock_path is None:
+        lock_path = run_dir / ".lock"
+    return result_store.save_cartridge_result(
+        str(run_dir), cartridge_id, payload,
+        str(lock_path), _TEST_OWNER_ID, 1, _TEST_WRITER,
+    )
 
 
 def test_result_path_returns_deterministic_convention(tmp_path: Path) -> None:
@@ -52,9 +126,7 @@ def test_save_cartridge_result_writes_exact_utf8_bytes(tmp_path: Path) -> None:
     """The exact bytes of the model result are persisted and returned at the
     canonical path."""
     text = "plain ASCII line"
-    path = result_store.save_cartridge_result(
-        str(tmp_path), "cart-a", text,
-    )
+    path = _save(str(tmp_path), "cart-a", text)
     assert path == str(tmp_path / "results" / "cart-a.txt")
     assert Path(path).read_bytes() == text.encode("utf-8")
     # Return value equals the path derivation (caller can rely on it).
@@ -66,7 +138,7 @@ def test_save_cartridge_result_unicode_multiline_round_trip(tmp_path: Path) -> N
     a full write/round-trip byte-for-byte (UTF-8, binary write, no newline
     translation)."""
     run_dir = str(tmp_path)
-    result_store.save_cartridge_result(run_dir, "cart-u", _UNICODE_PAYLOAD)
+    _save(run_dir, "cart-u", _UNICODE_PAYLOAD)
     target = tmp_path / "results" / "cart-u.txt"
     # Round-trip: decode the stored bytes and compare with the exact source
     # string.
@@ -88,13 +160,13 @@ def test_save_cartridge_result_non_str_sentinel_coerced(tmp_path: Path) -> None:
     non-str path is exercised here."""
     run_dir = str(tmp_path)
     sentinel = object()
-    result_store.save_cartridge_result(run_dir, "cart-s", sentinel)
+    _save(run_dir, "cart-s", sentinel)
     target = tmp_path / "results" / "cart-s.txt"
     assert target.read_bytes() == str(sentinel).encode("utf-8")
     # A str value is written at the canonical path.
-    assert result_store.save_cartridge_result(
-        run_dir, "cart-str", "exact str",
-    ) == str(tmp_path / "results" / "cart-str.txt")
+    assert _save(run_dir, "cart-str", "exact str") == str(
+        tmp_path / "results" / "cart-str.txt"
+    )
 
 
 def test_save_cartridge_result_creates_results_dir_on_demand(tmp_path: Path) -> None:
@@ -102,7 +174,7 @@ def test_save_cartridge_result_creates_results_dir_on_demand(tmp_path: Path) -> 
     automatically (no pre-existing directory needed)."""
     run_dir = str(tmp_path)
     assert not (tmp_path / "results").exists()
-    result_store.save_cartridge_result(run_dir, "cart-d", "x")
+    _save(run_dir, "cart-d", "x")
     assert (tmp_path / "results").exists()
     assert (tmp_path / "results" / "cart-d.txt").exists()
 
@@ -111,9 +183,9 @@ def test_save_cartridge_result_overwrites_on_redispatch(tmp_path: Path) -> None:
     """A re-dispatched cartridge overwrites its own deterministic file (a
     single canonical path per cartridge; the latest dispatch result wins)."""
     run_dir = str(tmp_path)
-    result_store.save_cartridge_result(run_dir, "cart-r", "v1")
+    _save(run_dir, "cart-r", "v1")
     assert (tmp_path / "results" / "cart-r.txt").read_bytes() == b"v1"
-    result_store.save_cartridge_result(run_dir, "cart-r", "v2")
+    _save(run_dir, "cart-r", "v2")
     assert (tmp_path / "results" / "cart-r.txt").read_bytes() == b"v2"
 
 
@@ -123,8 +195,8 @@ def test_save_cartridge_result_sequential_distinct_cartridges_distinct_files(
     """Two sequential cartridges produce two distinct files (no collision, no
     overwriting each other)."""
     run_dir = str(tmp_path)
-    result_store.save_cartridge_result(run_dir, "cart-x", "xx")
-    result_store.save_cartridge_result(run_dir, "cart-y", "yy")
+    _save(run_dir, "cart-x", "xx")
+    _save(run_dir, "cart-y", "yy")
     assert (tmp_path / "results" / "cart-x.txt").read_bytes() == b"xx"
     assert (tmp_path / "results" / "cart-y.txt").read_bytes() == b"yy"
     # Exactly two files, distinct.
@@ -145,11 +217,18 @@ def test_save_cartridge_result_failure_leaves_no_target_and_no_temp(
     def _raise(src, dst):
         raise OSError("replace failed")
 
+    # Seed the fence prerequisites BEFORE the failure is installed (the seed
+    # path also runs atomic_write, which calls os.replace).  Then install the
+    # failure so the fenced write is what raises.
+    run_dir = str(tmp_path)
+    _seed_claim_state(run_dir)
     # result_store imports os and calls os.replace; patch the same attribute.
     monkeypatch.setattr(os, "replace", _raise)
-    run_dir = str(tmp_path)
     with pytest.raises(OSError, match="replace failed"):
-        result_store.save_cartridge_result(run_dir, "cart-f", "partial")
+        result_store.save_cartridge_result(
+            run_dir, "cart-f", "partial",
+            os.path.join(run_dir, ".lock"), _TEST_OWNER_ID, 1, _TEST_WRITER,
+        )
     # No target file (no partial/corrupt write survived).
     assert not (tmp_path / "results" / "cart-f.txt").exists()
     # No orphaned temp file in results/.
@@ -174,13 +253,19 @@ def test_save_cartridge_result_failure_propagates_exception_identity(
     def _raise_failure(exc):
         raise exc
 
+    run_dir = str(tmp_path)
+    _seed_claim_state(run_dir)  # seed BEFORE the failure is installed
+    # The seed path also runs atomic_write (which calls os.replace), so it
+    # must complete before the replace is mocked to raise.
     monkeypatch.setattr(
         os, "replace", lambda a, b: _raise_failure(failure),
     )
 
-    run_dir = str(tmp_path)
     with pytest.raises(_UniqueOSError) as excinfo:
-        result_store.save_cartridge_result(run_dir, "cart-i", "x")
+        result_store.save_cartridge_result(
+            run_dir, "cart-i", "x",
+            os.path.join(run_dir, ".lock"), _TEST_OWNER_ID, 1, _TEST_WRITER,
+        )
     assert excinfo.value is failure
 
 
@@ -298,7 +383,7 @@ def test_save_cartridge_result_hostile_id_stays_in_results(tmp_path: Path) -> No
     """Even a hostile ID, when actually written, lands inside ``results/`` and
     the run dir itself is never touched."""
     for bad in ("../evil", "/etc/passwd"):
-        dest = result_store.save_cartridge_result(str(tmp_path), bad, "payload")
+        dest = _save(str(tmp_path), bad, "payload")
         _assert_in_results(dest, tmp_path)
         _no_subdirs_under_results(dest, tmp_path)
         assert Path(dest).read_bytes() == b"payload"
@@ -337,7 +422,7 @@ def test_colliding_ids_persist_to_independent_files(tmp_path: Path) -> None:
     pair = ("a/b", "a_b")
     payloads = {"a/b": "slash-payload", "a_b": "underscore-payload"}
     for cid in pair:
-        result_store.save_cartridge_result(run_dir, cid, payloads[cid])
+        _save(run_dir, cid, payloads[cid])
 
     # The two IDs must land on distinct files.
     p_slash = result_store.result_path(run_dir, "a/b")
@@ -398,7 +483,7 @@ def test_unsafe_id_and_literal_digest_id_do_not_collide(tmp_path: Path) -> None:
     # Both results survive independently, byte-exact.
     payloads = {unsafe_id: "unsafe-payload", digest: "digest-payload"}
     for cid in (unsafe_id, digest):
-        result_store.save_cartridge_result(run_dir, cid, payloads[cid])
+        _save(run_dir, cid, payloads[cid])
     assert Path(p_unsafe).read_bytes() == payloads[unsafe_id].encode("utf-8")
     assert Path(p_digest).read_bytes() == payloads[digest].encode("utf-8")
     assert set((tmp_path / "results").iterdir()) == {Path(p_unsafe), Path(p_digest)}
@@ -426,7 +511,7 @@ def test_literal_reserved_prefix_id_is_reencoded_and_distinct(tmp_path: Path) ->
     # Both results survive independently, byte-exact.
     payloads = {unsafe_id: "unsafe-payload", reserved_literal: "reserved-lit-payload"}
     for cid in (unsafe_id, reserved_literal):
-        result_store.save_cartridge_result(run_dir, cid, payloads[cid])
+        _save(run_dir, cid, payloads[cid])
     assert Path(p_unsafe).read_bytes() == payloads[unsafe_id].encode("utf-8")
     assert Path(p_literal).read_bytes() == payloads[reserved_literal].encode("utf-8")
     assert set((tmp_path / "results").iterdir()) == {Path(p_unsafe), Path(p_literal)}
@@ -446,13 +531,13 @@ def test_original_ab_vs_ab_still_fixed_and_safe_ids_unchanged(tmp_path: Path) ->
     assert Path(paths[0]).name.startswith("__sha256__")
     payloads = {cid: "payload-for-" + cid.replace("/", "-") for cid in ids}
     for cid in ids:
-        result_store.save_cartridge_result(run_dir, cid, payloads[cid])
+        _save(run_dir, cid, payloads[cid])
     for cid, path in zip(ids, paths):
         assert Path(path).read_bytes() == payloads[cid].encode("utf-8")
     assert set((tmp_path / "results").iterdir()) == {Path(p) for p in paths}
 
 
-# --- crash-durability protocol (fsync-before-replace, durable dir swap) ---
+# --- crash-durability protocol (fsync-before-replace, durable dir swap) ----
 
 
 def _fake_protocol_hooks(monkeypatch, events):
@@ -482,15 +567,26 @@ def _assert_durable_protocol(events, target_dir):
     """The protocol must run: file fsync (on the temp file's open fd) ->
     replace -> directory fsync (on the O_RDONLY fd of the target's directory).
     The file fd is closed before the directory open, so fd numbers may be
-    reused; identity is proven via the open events, not fd-number inequality."""
+    reused; identity is proven via the open events, not fd-number inequality.
+
+    Slice 2: the fenced write first acquires the run lock — a *separate*
+    O_EXCL open in the run directory — before the temp-file O_EXCL open that
+    lives under the results directory.  The file fsync must be on the *temp-
+    file* fd, which is uniquely the O_EXCL open under *target_dir*.
+    """
     i_fs = [i for i, e in enumerate(events) if e[0] == "fsync"]
     i_re = [i for i, e in enumerate(events) if e[0] == "replace"]
     assert i_fs[0] < i_re[0] < i_fs[-1], f"protocol order violated: {events}"
     fsync_fds = [e[1] for e in events if e[0] == "fsync"]
     assert len(fsync_fds) == 2, f"expected file + directory fsync, got: {events}"
     tmp_open = next(
-        (e for e in events if e[0] == "open" and e[2] & os.O_EXCL),
-        "no O_EXCL temp-file open found",
+        (
+            e for e in events
+            if e[0] == "open"
+            and (e[2] & os.O_EXCL)
+            and os.path.dirname(e[1]) == target_dir
+        ),
+        "no O_EXCL temp-file open in the target directory found",
     )
     assert fsync_fds[0] == tmp_open[3], "file fsync must be on the temp file's fd"
     dir_opens = [e for e in events if e[0] == "open" and e[2] == os.O_RDONLY]
@@ -506,9 +602,13 @@ def test_file_fsynced_before_replace_and_directory_fsynced_after(
     the results directory is fsync'd AFTER the swap (the swap itself is
     durable)."""
     durability.directory_fsync_supported()  # pre-warm the (cached) probe
+    _seed_claim_state(str(tmp_path))  # seed before enabling protocol hooks
     events = []
     _fake_protocol_hooks(monkeypatch, events)
-    dest = result_store.save_cartridge_result(str(tmp_path), "cart-u", "ok")
+    dest = result_store.save_cartridge_result(
+        str(tmp_path), "cart-u", "ok",
+        str(tmp_path / ".lock"), _TEST_OWNER_ID, 1, _TEST_WRITER,
+    )
     _assert_durable_protocol(events, os.path.dirname(dest))
     assert (tmp_path / "results" / "cart-u.txt").read_bytes() == b"ok"
 
@@ -520,13 +620,18 @@ def test_file_fsync_failure_raises_no_target_no_temp(
     target and no temp file -- the pre-fix corruption window (flush-only,
     no fsync) is closed for results too."""
     durability.directory_fsync_supported()
+    run_dir = str(tmp_path)
+    _seed_claim_state(run_dir)  # seed before the failure is installed
 
     def boom(fd):
         raise OSError("no room for data")
 
     monkeypatch.setattr(os, "fsync", boom)
     with pytest.raises(OSError, match="no room for data"):
-        result_store.save_cartridge_result(str(tmp_path), "cart-f", "ok")
+        result_store.save_cartridge_result(
+            run_dir, "cart-f", "ok",
+            os.path.join(run_dir, ".lock"), _TEST_OWNER_ID, 1, _TEST_WRITER,
+        )
     assert not (tmp_path / "results" / "cart-f.txt").exists()
     assert not any(p.suffix == ".tmp" for p in (tmp_path / "results").iterdir())
 
@@ -540,6 +645,8 @@ def test_directory_fsync_failure_raises_after_swap(
     exact result and the caller must treat the save as incomplete and retry."""
     durability.directory_fsync_supported()
     data = _UNICODE_PAYLOAD.encode("utf-8")
+    run_dir = str(tmp_path)
+    _seed_claim_state(run_dir)  # seed before the failure is installed
 
     real_open = os.open
     dir_fd = {}
@@ -557,7 +664,10 @@ def test_directory_fsync_failure_raises_after_swap(
     monkeypatch.setattr(os, "open", fake_open)
     monkeypatch.setattr(os, "fsync", fake_fsync)
     with pytest.raises(OSError, match="directory fsync failed"):
-        result_store.save_cartridge_result(str(tmp_path), "cart-d", _UNICODE_PAYLOAD)
+        result_store.save_cartridge_result(
+            run_dir, "cart-d", _UNICODE_PAYLOAD,
+            os.path.join(run_dir, ".lock"), _TEST_OWNER_ID, 1, _TEST_WRITER,
+        )
     assert (tmp_path / "results" / "cart-d.txt").read_bytes() == data
     assert not any(p.suffix == ".tmp" for p in (tmp_path / "results").iterdir())
 
@@ -569,11 +679,77 @@ def test_unsupported_dir_fsync_still_succeeds_byte_exact(
     capability flag forced False the save still succeeds, exactly one fsync
     runs (the file), and the result is byte-exact (incl. Unicode)."""
     durability.directory_fsync_supported()
+    run_dir = str(tmp_path)
+    _seed_claim_state(run_dir)  # seed before the flag is forced
+
     monkeypatch.setattr(durability, "_directory_fsync_support", False)
     fsyncs = []
     monkeypatch.setattr(os, "fsync", lambda fd: fsyncs.append(fd))
 
     data = _UNICODE_PAYLOAD.encode("utf-8")
-    result_store.save_cartridge_result(str(tmp_path), "cart-u", _UNICODE_PAYLOAD)
+    result_store.save_cartridge_result(
+        run_dir, "cart-u", _UNICODE_PAYLOAD,
+        os.path.join(run_dir, ".lock"), _TEST_OWNER_ID, 1, _TEST_WRITER,
+    )
     assert len(fsyncs) == 1, f"expected exactly one fsync, got {fsyncs}"
     assert (tmp_path / "results" / "cart-u.txt").read_bytes() == data
+
+
+# --- Slice 2 ownership fence: stale writers are rejected, owner writes pass --
+
+
+def _wrong_writer() -> RuntimeIdentity:
+    return RuntimeIdentity(runtime_id="1" * 32, pid=43, start_ticks=999)
+
+
+def test_stale_runtime_identity_result_write_rejected(tmp_path: Path) -> None:
+    """A result write from a writer whose runtime_id does not match the claim
+    is rejected (ExecutionOwnershipError); nothing is written to results/."""
+    from magazine.schema import ExecutionOwnershipError
+
+    run_dir = str(tmp_path)
+    _seed_claim_state(run_dir)
+    with pytest.raises(ExecutionOwnershipError, match="mismatch"):
+        result_store.save_cartridge_result(
+            run_dir, "cart-stale", "stale",
+            os.path.join(run_dir, ".lock"), _TEST_OWNER_ID, 1, _wrong_writer(),
+        )
+    assert not (tmp_path / "results" / "cart-stale.txt").exists()
+
+
+def test_wrong_attempt_result_write_rejected(tmp_path: Path) -> None:
+    """A result write claiming a different attempt is rejected; nothing is
+    written to results/."""
+    from magazine.schema import ExecutionOwnershipError
+
+    run_dir = str(tmp_path)
+    _seed_claim_state(run_dir)
+    with pytest.raises(ExecutionOwnershipError, match="mismatch"):
+        result_store.save_cartridge_result(
+            run_dir, "cart-wa", "wrong",
+            os.path.join(run_dir, ".lock"), _TEST_OWNER_ID, 2, _TEST_WRITER,
+        )
+    assert not (tmp_path / "results" / "cart-wa.txt").exists()
+
+
+def test_result_write_halted_run_rejected(tmp_path: Path) -> None:
+    """A result write when the run is no longer RUNNING (e.g. HALTED) is
+    rejected even by a writer whose identity is correct."""
+    from magazine.run_transition import RunTransitionError
+
+    run_dir = str(tmp_path)
+    _seed_claim_state(run_dir)
+    from magazine.state_store import save_run_state
+    save_run_state(os.path.join(run_dir, "state.json"), {
+        "done": ["seeded"],
+        "current": None,
+        "todo": [],
+        "status": "HALTED",
+        "revision": 2,
+    })
+    with pytest.raises(RunTransitionError, match="RUNNING"):
+        result_store.save_cartridge_result(
+            run_dir, "cart-halt", "halted",
+            os.path.join(run_dir, ".lock"), _TEST_OWNER_ID, 1, _TEST_WRITER,
+        )
+    assert not (tmp_path / "results" / "cart-halt.txt").exists()

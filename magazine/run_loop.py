@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from magazine import orchestration, run_action
+from magazine.runtime_identity import RuntimeIdentity
 from magazine.state import STATUS_COMPLETED, STATUS_READY
 
 __all__ = ["MultiCartridgeResult", "run_all_cartridges"]
@@ -20,6 +21,8 @@ async def run_all_cartridges(
     state_path: str,
     lock_path: str,
     owner_id: str,
+    writer_attempt: int,
+    writer_identity: RuntimeIdentity,
     model_map: dict,
     dispatch,
 ) -> MultiCartridgeResult:
@@ -30,6 +33,8 @@ async def run_all_cartridges(
             state_path,
             lock_path,
             owner_id,
+            writer_attempt,
+            writer_identity,
             model_map,
             dispatch,
         )
@@ -41,4 +46,6 @@ async def run_all_cartridges(
                 f"unexpected post-completion run status {status!r}; expected "
                 f"{STATUS_COMPLETED!r} or {STATUS_READY!r}"
             )
-        run_action.persist_begin_next_cartridge(state_path, lock_path, owner_id)
+        run_action.persist_begin_next_cartridge(
+            state_path, lock_path, owner_id, writer_attempt, writer_identity
+        )

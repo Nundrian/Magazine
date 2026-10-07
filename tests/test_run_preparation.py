@@ -29,6 +29,7 @@ from magazine import run_action
 from magazine import run_preparation
 from magazine.run_preparation import PreparedRun
 from magazine import state
+from magazine.runtime_identity import get_runtime_identity
 from magazine.state_store import load_run_state, save_run_state
 
 CARTRIDGE_IDS = ("cart-a", "cart-b")
@@ -109,6 +110,7 @@ def test_persist_admit_run_invoked_once_with_exact_args_and_identity(
         "status": state.STATUS_RUNNING,
         "revision": 99,
     }
+    attempted = 7  # distinct sentinel attempt number handed back
     calls: list[tuple] = []
 
     def _fake_persist_admit_run(
@@ -116,10 +118,24 @@ def test_persist_admit_run_invoked_once_with_exact_args_and_identity(
         lock_path: str,
         owner_id: str,
         cartridge_ids: list[str],
-    ) -> dict:
-        # Record arguments; hand the single unique sentinel dict back.
-        calls.append((state_path, lock_path, owner_id, cartridge_ids))
-        return admitted
+        runtime_id: str,
+        pid: int,
+        start_ticks: int,
+    ):
+        # Record the once-derived paths, owner, cartridges, and identity args;
+        # hand the single unique sentinel (state, attempt) back.
+        calls.append(
+            (
+                state_path,
+                lock_path,
+                owner_id,
+                cartridge_ids,
+                runtime_id,
+                pid,
+                start_ticks,
+            )
+        )
+        return admitted, attempted
 
     expected_state_path = str(Path(state_dir) / "run" / "state.json")
     expected_lock_path = str(Path(state_dir) / "run" / ".lock")
@@ -137,7 +153,15 @@ def test_persist_admit_run_invoked_once_with_exact_args_and_identity(
 
     # 1. persist_admit_run was called exactly once.
     assert len(calls) == 1
-    (state_arg, lock_arg, owner_arg, cartridges) = calls[0]
+    (
+        state_arg,
+        lock_arg,
+        owner_arg,
+        cartridges,
+        rid_arg,
+        pid_arg,
+        ticks_arg,
+    ) = calls[0]
 
     # 2. / 3. its state_path / lock_path args equal the once-derived paths.
     assert state_arg == expected_state_path
@@ -149,10 +173,25 @@ def test_persist_admit_run_invoked_once_with_exact_args_and_identity(
     # 5. cartridge_ids are exactly Magazine-ordered.
     assert cartridges == ["cart-a", "cart-b"]
 
-    # 6. prepared.state IS the admitted object (identity, not equality).
+    # 6. the identity args are the live process identity (no explicit identity
+    #    was supplied to prepare_run, so it resolves the live process identity).
+    live = get_runtime_identity()
+    assert (rid_arg, pid_arg, ticks_arg) == (
+        live.runtime_id,
+        live.pid,
+        live.start_ticks,
+    )
+
+    # 7. prepared.state IS the admitted object (identity, not equality).
     assert prepared.state is admitted
 
-    # 7. prepared's paths are the same paths passed to persist_admit_run.
+    # 8. prepared.attempt equals the attempt number the admission returned.
+    assert prepared.attempt == attempted
+
+    # 9. prepared.identity is the same identity that was passed to admission.
+    assert prepared.identity is live
+
+    # 10. prepared's paths are the same paths passed to persist_admit_run.
     assert prepared.state_path == state_arg
     assert prepared.lock_path == lock_arg
 

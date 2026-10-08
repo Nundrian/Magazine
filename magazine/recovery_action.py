@@ -32,9 +32,10 @@ path (a frozen replacement with the recovering runtime's identity and
 from __future__ import annotations
 
 import os
-from dataclasses import replace
+from dataclasses import dataclass, replace
 
 from magazine.execution_meta import (
+    HALT_REASON_LOST_OWNER,
     HALT_REASON_OPERATOR_RECOVERED,
     load_execution_metadata,
     save_execution_metadata,
@@ -43,19 +44,63 @@ from magazine.execution_meta import (
 from magazine.paths import execution_file_path
 from magazine.recovery_transition import halt_uncertain_run, recover_halted_run
 from magazine.run_action import resolve_runtime_identity
-from magazine.run_lock import acquire_run_lock, release_run_lock
-from magazine.runtime_identity import RuntimeIdentity
+from magazine.run_lock import (
+    MagazineLockError,
+    acquire_run_lock,
+    release_run_lock,
+)
+from magazine.runtime_identity import RuntimeIdentity, get_runtime_identity
 from magazine.schema import ExecutionOwnershipError
+from magazine.state import STATUS_RUNNING
 from magazine.state_store import load_run_state, save_run_state
 
 __all__ = [
+    "RecoverOutcome",
     "persist_error_halt",
     "persist_recover_halted",
     "persist_uncertain_halt",
+    "recover_lost_runtime",
 ]
 
 
-def persist_uncertain_halt(state_path: str, lock_path: str, owner_id: str) -> dict:
+@dataclass(frozen=True)
+class RecoverOutcome:
+    """Result of attempting to recover a lost runtime.
+
+    ``outcome`` is one of:
+
+    * ``"halted"`` -- the caller is a new generation; the run is now ``HALTED``
+      (state.json and execution.json updated under the run lock).  ``state`` is
+      the freshly persisted ``HALTED`` state; ``claim`` is the frozen replaced
+      claim (the old owner's identity, ``halt_reason = lost-owner``).
+    * ``"no_claim"`` -- no execution.json.  The run is a *legacy* RUNNING run
+      with no ownership evidence (conservative: no auto-HALT, no invented owner).
+      ``state`` / ``claim`` are both ``None``.
+    * ``"same_runtime"`` -- the claim's ``runtime_id`` equals the writer's
+      ``runtime_id``: the writer *is* the current runtime.  Nothing to recover.
+      ``state`` is the freshly-loaded state.json; ``claim`` is the claim.
+    * ``"locked"`` -- the run lock could not be acquired (a live executor holds
+      it).  The run is left completely untouched.  ``state`` / ``claim`` are
+      the pre-lock snapshots.
+    * ``"state_changed"`` -- the re-check under the lock found the status is no
+      longer ``RUNNING``.  ``state`` is the re-read state; ``claim`` is ``None``.
+    * ``"claim_changed"`` -- the re-check under the lock found the claim
+      (attempt / runtime_id / pid / start_ticks) differs from the pre-lock
+      snapshot.  ``state`` is the re-read state; ``claim`` is the re-read claim.
+    """
+    outcome: str
+    state: dict | None
+    claim: ExecutionMetadata | None
+
+
+def persist_uncertain_halt(
+    state_path: str,
+    lock_path: str,
+    owner_id: str,
+    runtime_id: str | None = None,
+    pid: int | None = None,
+    start_ticks: int | None = None,
+) -> dict:
     """Persist the ``RUNNING -> HALTED`` transition for an uncertain run.
 
     The run lock is acquired first and the persisted state is only loaded
@@ -69,6 +114,17 @@ def persist_uncertain_halt(state_path: str, lock_path: str, owner_id: str) -> di
         state_path: Path to the persisted run state file.
         lock_path: Path to the run lock file.
         owner_id: Owner ID passed unchanged to lock acquisition and release.
+        runtime_id:
+            Optional runtime id of the process performing the uncertain halt.
+            When all three of ``runtime_id`` / ``pid`` / ``start_ticks`` are
+            given they are threaded verbatim to lock acquisition/release;
+            otherwise the current process's live identity is used (same
+            all-or-nothing rule as :func:`magazine.run_action.resolve_runtime_identity`).
+        pid:
+            Optional pid for the all-or-nothing identity resolution.
+        start_ticks:
+            Optional ``/proc`` start tick for the all-or-nothing identity
+            resolution.
 
     Returns:
         The exact ``HALTED`` state that was successfully persisted.
@@ -88,7 +144,22 @@ def persist_uncertain_halt(state_path: str, lock_path: str, owner_id: str) -> di
     persisted state is left untouched.
     """
     # 1. Acquire the existing run lock first, passing owner_id unchanged.
-    acquire_run_lock(lock_path, owner_id)
+    # Resolve the uncertain-halt writer's identity first (all-or-nothing, mirroring
+    # :func:`magazine.run_action.resolve_runtime_identity`).  Identity resolution
+    # is cheap and never reads the run state, so it happens before the lock is
+    # taken.  It is threaded to lock acquisition/release as the process-incarnation
+    # evidence for the run lock.
+    identity = resolve_runtime_identity(runtime_id, pid, start_ticks)
+
+    # 1. Acquire the existing run lock first, passing owner_id unchanged and the
+    #    resolved identity (runtime_id / pid / start_ticks).
+    acquire_run_lock(
+        lock_path,
+        owner_id,
+        identity.runtime_id,
+        identity.pid,
+        identity.start_ticks,
+    )
     try:
         # 2. Only load persisted state after the lock is acquired.
         state = load_run_state(state_path)
@@ -99,9 +170,15 @@ def persist_uncertain_halt(state_path: str, lock_path: str, owner_id: str) -> di
         # 5. Return the exact HALTED state that was successfully persisted.
         return halted
     finally:
-        # 6. Release the same lock with the same owner_id, whether the
-        #    persistence succeeded or any step raised.
-        release_run_lock(lock_path, owner_id)
+        # 6. Release the same lock with the same owner_id and identity, whether
+        #    the persistence succeeded or any step raised.
+        release_run_lock(
+            lock_path,
+            owner_id,
+            identity.runtime_id,
+            identity.pid,
+            identity.start_ticks,
+        )
 
 
 def persist_recover_halted(
@@ -176,8 +253,15 @@ def persist_recover_halted(
     # taken.  It is used only to augment the retired claim below.
     identity = resolve_runtime_identity(runtime_id, pid, start_ticks)
 
-    # 1. Acquire the existing run lock first, passing owner_id unchanged.
-    acquire_run_lock(lock_path, owner_id)
+    # 1. Acquire the existing run lock first, passing owner_id unchanged and the
+    #    resolved identity (runtime_id / pid / start_ticks).
+    acquire_run_lock(
+        lock_path,
+        owner_id,
+        identity.runtime_id,
+        identity.pid,
+        identity.start_ticks,
+    )
     try:
         # 2. Only load persisted state after the lock is acquired.
         state = load_run_state(state_path)
@@ -220,9 +304,15 @@ def persist_recover_halted(
         # 6. Return the exact READY state that was successfully persisted.
         return recovered
     finally:
-        # 7. Release the same lock with the same owner_id, whether the
-        #    persistence succeeded or any step raised.
-        release_run_lock(lock_path, owner_id)
+        # 7. Release the same lock with the same owner_id and identity, whether
+        #    the persistence succeeded or any step raised.
+        release_run_lock(
+            lock_path,
+            owner_id,
+            identity.runtime_id,
+            identity.pid,
+            identity.start_ticks,
+        )
 
 
 def persist_error_halt(
@@ -288,7 +378,15 @@ def persist_error_halt(
     holds the lock after a successful or failed call.
     """
     # 1. Acquire the existing run lock first, passing owner_id unchanged.
-    acquire_run_lock(lock_path, owner_id)
+    # 1. Acquire the existing run lock first, passing owner_id unchanged and the
+    #    writer's ownership identity (runtime_id / pid / start_ticks).
+    acquire_run_lock(
+        lock_path,
+        owner_id,
+        writer_identity.runtime_id,
+        writer_identity.pid,
+        writer_identity.start_ticks,
+    )
     try:
         run_dir = os.path.dirname(state_path)
         exec_path = execution_file_path(run_dir)
@@ -342,5 +440,173 @@ def persist_error_halt(
         # 7. Return the exact HALTED state that was successfully persisted.
         return halted
     finally:
-        # 8. Release the same lock with the same owner_id on every path.
-        release_run_lock(lock_path, owner_id)
+        # 8. Release the same lock with the same owner_id and identity on every path.
+        release_run_lock(
+            lock_path,
+            owner_id,
+            writer_identity.runtime_id,
+            writer_identity.pid,
+            writer_identity.start_ticks,
+        )
+
+
+def recover_lost_runtime(
+    state_path: str,
+    lock_path: str,
+    owner_id: str,
+    runtime_id: str | None = None,
+    pid: int | None = None,
+    start_ticks: int | None = None,
+) -> RecoverOutcome:
+    """Attempt to recover a run whose owning runtime is no longer alive.
+
+    This is the auto-recovery path used by the runner's ``POST /start``
+    interception.  It is conservative and never invents ownership evidence:
+    a *legacy* RUNNING run (a ``state.json`` marked ``RUNNING`` but with no
+    ``execution.json`` claim) is left untouched and reported as ``no_claim``; the
+    run is only transitioned to ``HALTED`` under the run lock.
+
+    The algorithm (per the execution-ownership design, Slice 4):
+
+    1. Read ``execution.json``.  If there is no claim, return
+       ``RecoverOutcome("no_claim", None, None)``.
+    2. If ``claim.runtime_id`` equals the writer's ``runtime_id`` (the caller
+       *is* the owning runtime), return
+       ``RecoverOutcome("same_runtime", state, claim)``, where ``state`` is the
+       freshly-loaded ``state.json``.
+    3. Otherwise the caller is a *new generation*.  Attempt to take the run
+       lock:
+       a. Acquire the lock with the writer's identity (owner_id, runtime_id,
+          pid, start_ticks).  If acquisition raises ``MagazineLockError`` (a
+          live executor holds the lock), return
+          ``RecoverOutcome("locked", state, claim)``.  Do *not* touch the run
+          state.
+       b. Re-check ``state.json`` under the lock.  If the status is no longer
+          ``RUNNING`` (some other process changed it while we were not holding
+          the lock), return ``RecoverOutcome("state_changed", state, None)``.
+       c. Re-check ``execution.json`` under the lock.  If the claim's
+          ``(attempt, runtime_id, started_pid, started_ticks)`` differs from the
+          pre-lock snapshot, return ``RecoverOutcome("claim_changed", state,
+          claim)``.
+       d. Halt: persist ``RUNNING -> HALTED`` with
+          :func:`magazine.recovery_transition.halt_uncertain_run` and atomically
+          save ``state.json``.
+       e. Retire the claim (frozen replacement via :func:`dataclasses.replace`,
+          preserving ``attempt`` and ``runtime_id`` and setting ``halted_by`` =
+          the writer's ``runtime_id``, ``halted_at`` = now, ``halt_reason`` =
+          ``"lost-owner"``) and durably save ``execution.json``.
+       f. Return ``RecoverOutcome("halted", new_state, retired_claim)``.
+
+    The lock is always released in a ``finally`` block, so the caller never
+    holds it after this returns.
+
+    Args:
+        state_path: Path to the persisted run state file.
+        lock_path: Path to the run lock file.
+        owner_id: Owner ID passed unchanged to lock acquisition and release.
+        runtime_id:
+            Optional runtime id of the recovering (calling) process.  When all
+            three of ``runtime_id`` / ``pid`` / ``start_ticks`` are given they
+            are threaded verbatim to lock acquisition/release and used for the
+            same-runtime comparison; otherwise the current process's live
+            identity is used (same all-or-nothing rule as
+            :func:`magazine.run_action.resolve_runtime_identity`).
+        pid:
+            Optional pid for the all-or-nothing identity resolution.
+        start_ticks:
+            Optional ``/proc`` start tick for the all-or-nothing identity
+            resolution.
+
+    Returns:
+        A :class:`RecoverOutcome` with ``outcome`` in one of ``halted``,
+        ``no_claim``, ``same_runtime``, ``locked``, ``state_changed`` or
+        ``claim_changed``, plus the relevant ``state`` / ``claim``.
+    """
+    # Resolve the recovering (writing) runtime's identity first (all-or-nothing,
+    # mirrors :func:`magazine.run_action.resolve_runtime_identity`).  Identity
+    # resolution is cheap and never reads the run state, so it happens before
+    # the lock is taken.  It drives the same-runtime comparison and is threaded
+    # to lock acquisition/release.
+    writer_identity = resolve_runtime_identity(runtime_id, pid, start_ticks)
+
+    # --- Pre-lock, read-only fast paths (conservative; no state touched) ---
+    run_dir = os.path.dirname(state_path)
+    exec_path = execution_file_path(run_dir)
+
+    # Step 1. Read the execution claim.  No claim == a *legacy* RUNNING run with
+    #         no ownership evidence: fail conservatively (no auto-HALT, no
+    #         invented owner).
+    claim_before = load_execution_metadata(exec_path)
+    if claim_before is None:
+        return RecoverOutcome("no_claim", None, None)
+
+    # Step 2. Load the state and check whether the caller is the owning runtime.
+    state_before = load_run_state(state_path)
+    if claim_before.runtime_id == writer_identity.runtime_id:
+        # The caller *is* the current runtime: nothing to recover.
+        return RecoverOutcome("same_runtime", state_before, claim_before)
+
+    # Step 3. Different runtime: the writer is a new generation.  Attempt to
+    #         take the run lock with the writer's identity.
+    try:
+        acquire_run_lock(
+            lock_path,
+            owner_id,
+            writer_identity.runtime_id,
+            writer_identity.pid,
+            writer_identity.start_ticks,
+        )
+    except MagazineLockError:
+        # A live executor holds the run lock.  Do NOT touch the run.
+        return RecoverOutcome("locked", state_before, claim_before)
+
+    try:
+        # Step 3b. Re-check the status under the lock (TOCTOU-safe).
+        state = load_run_state(state_path)
+        if state.get("status") != STATUS_RUNNING:
+            # Something else changed the run while we were not holding the lock.
+            return RecoverOutcome("state_changed", state, None)
+
+        # Step 3c. Re-check the claim under the lock.
+        claim_now = load_execution_metadata(exec_path)
+        if claim_now is None or (
+            claim_now.attempt,
+            claim_now.runtime_id,
+            claim_now.pid,
+            claim_now.start_ticks,
+        ) != (
+            claim_before.attempt,
+            claim_before.runtime_id,
+            claim_before.pid,
+            claim_before.start_ticks,
+        ):
+            return RecoverOutcome("claim_changed", state, claim_now)
+
+        # Step 3d. Halt: persist RUNNING -> HALTED (crash-consistency: the state
+        #           commit is the first durable step).
+        halted = halt_uncertain_run(state)
+        save_run_state(state_path, halted)
+
+        # Step 3e. Retire the claim (frozen replacement, preserving attempt and
+        #           runtime_id) with the lost-owner reason.  Its failure MUST
+        #           propagate so the run stays durably HALTED and the operator
+        #           recovery path (:func:`persist_recover_halted`) stays retryable.
+        retired_claim = replace(
+            claim_now,
+            halted_by=writer_identity.runtime_id,
+            halted_at=utc_now_iso(),
+            halt_reason=HALT_REASON_LOST_OWNER,
+        )
+        save_execution_metadata(exec_path, retired_claim)
+
+        # Step 3f. Return the freshly persisted HALTED state and the retired
+        #           claim.
+        return RecoverOutcome("halted", halted, retired_claim)
+    finally:
+        release_run_lock(
+            lock_path,
+            owner_id,
+            writer_identity.runtime_id,
+            writer_identity.pid,
+            writer_identity.start_ticks,
+        )

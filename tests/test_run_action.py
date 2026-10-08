@@ -43,7 +43,7 @@ from magazine.execution_meta import (
     utc_now_iso,
 )
 from magazine.paths import execution_file_path
-from magazine.runtime_identity import RuntimeIdentity
+from magazine.runtime_identity import RuntimeIdentity, get_runtime_identity
 from magazine.schema import ExecutionOwnershipError
 
 import magazine.run_action as run_action  # full module (run_action.os.path.exists)
@@ -65,6 +65,11 @@ def _make_paths(tmp_path: pytest.Path) -> tuple[str, str]:
 # different generation must be refused by the fence.
 _TEST_WRITER = RuntimeIdentity(runtime_id="0" * 32, pid=42, start_ticks=1000)
 _TEST_STALE = RuntimeIdentity(runtime_id="1" * 32, pid=43, start_ticks=999)
+
+# Live incarnation of *this* test process.  The lock-error tests hold the lock
+# as a foreign owner (owner-a) under this live incarnation so the acquire
+# path exercises the *live-foreign* branch (refuse, not stale recovery).
+_LIVE_RUNTIME = get_runtime_identity()
 
 
 def _seed_claim(state_path: str, attempt: int = 1, writer: RuntimeIdentity | None = None) -> None:
@@ -274,14 +279,23 @@ def test_persist_begin_next_cartridge_lock_error(tmp_path):
         "revision": 0,
     }
     save_run_state(state_path, ready)
-    acquire_run_lock(lock_path, "owner-a")
+    acquire_run_lock(
+        lock_path,
+        "owner-a",
+        _LIVE_RUNTIME.runtime_id,
+        _LIVE_RUNTIME.pid,
+        _LIVE_RUNTIME.start_ticks,
+    )
 
     with pytest.raises(MagazineLockError):
         persist_begin_next_cartridge(state_path, lock_path, "owner-b", 1, _TEST_WRITER)
 
     assert load_run_state(state_path) == ready
     with open(lock_path, "r", encoding="utf-8") as f:
-        assert f.read() == "owner-a"
+        assert f.read() == (
+            f"owner-a|{_LIVE_RUNTIME.runtime_id}|{_LIVE_RUNTIME.pid}|"
+            f"{_LIVE_RUNTIME.start_ticks}"
+        )
 
 
 def test_persist_begin_next_cartridge_malformed_state(tmp_path):
@@ -618,14 +632,23 @@ def test_persist_complete_current_cartridge_lock_error(tmp_path):
         "revision": 0,
     }
     save_run_state(state_path, running)
-    acquire_run_lock(lock_path, "owner-a")
+    acquire_run_lock(
+        lock_path,
+        "owner-a",
+        _LIVE_RUNTIME.runtime_id,
+        _LIVE_RUNTIME.pid,
+        _LIVE_RUNTIME.start_ticks,
+    )
 
     with pytest.raises(MagazineLockError):
         persist_complete_current_cartridge(state_path, lock_path, "owner-b", 1, _TEST_WRITER)
 
     assert load_run_state(state_path) == running
     with open(lock_path, "r", encoding="utf-8") as f:
-        assert f.read() == "owner-a"
+        assert f.read() == (
+            f"owner-a|{_LIVE_RUNTIME.runtime_id}|{_LIVE_RUNTIME.pid}|"
+            f"{_LIVE_RUNTIME.start_ticks}"
+        )
 
 
 def test_persist_complete_current_cartridge_missing_claim_raises(tmp_path):

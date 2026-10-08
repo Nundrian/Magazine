@@ -44,6 +44,7 @@ from magazine.execution_meta import (
 )
 from magazine.run_action import RunAdmissionError, persist_admit_run
 from magazine.run_lock import MagazineLockError, acquire_run_lock, release_run_lock
+from magazine.runtime_identity import get_runtime_identity
 from magazine.state_store import load_run_state, save_run_state
 
 __all__ = [
@@ -306,13 +307,28 @@ def test_admit_second_runner_fails_on_toctou(tmp_path: Path) -> None:
     assert first_attempt == 1
     assert not Path(lock_path).exists()
 
-    # Second runner holds the lock, then attempts admission -> lock error.
-    acquire_run_lock(lock_path, "owner-2")
+    # Second runner holds the lock (under this process's live identity), then
+    # attempts admission -> lock error.  The same incarnation re-acquiring its
+    # own lock raises, which is the TOCTOU failure this test exercises.
+    identity = get_runtime_identity()
+    acquire_run_lock(
+        lock_path,
+        "owner-2",
+        identity.runtime_id,
+        identity.pid,
+        identity.start_ticks,
+    )
     try:
         with pytest.raises(MagazineLockError):
             persist_admit_run(state_path, lock_path, "owner-2", ["cart-a"])
     finally:
-        release_run_lock(lock_path, "owner-2")
+        release_run_lock(
+            lock_path,
+            "owner-2",
+            identity.runtime_id,
+            identity.pid,
+            identity.start_ticks,
+        )
 
     # First admission intact and untouched.
     assert load_run_state(state_path) == first_state

@@ -56,7 +56,13 @@ async def execute_one_cartridge(
     # the run is RUNNING before any dispatch can occur.  A stale/non-owner
     # generation (same owner_id, a new process generation) is refused here
     # before it can dispatch a cartridge.
-    acquire_run_lock(lock_path, owner_id)
+    acquire_run_lock(
+        lock_path,
+        owner_id,
+        writer_identity.runtime_id,
+        writer_identity.pid,
+        writer_identity.start_ticks,
+    )
     try:
         existing_claim = load_execution_metadata(exec_path)
         if existing_claim is None:
@@ -84,7 +90,13 @@ async def execute_one_cartridge(
                 f"dispatched"
             )
     finally:
-        release_run_lock(lock_path, owner_id)
+        release_run_lock(
+            lock_path,
+            owner_id,
+            writer_identity.runtime_id,
+            writer_identity.pid,
+            writer_identity.start_ticks,
+        )
 
     dispatched = await execute.dispatch_current_cartridge(
         magazine_path, state_path, model_map, dispatch

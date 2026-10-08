@@ -180,7 +180,9 @@ def process_is_extinct(pid: int, start_ticks: int) -> bool:
         (the pid was reused by a different process).
 
     Otherwise returns ``False`` (the same process incarnation is still alive).
-    Fail-closed: any error reading ``/proc`` is treated as extinct.
+    Fail-closed: any ambiguous error reading or parsing an existing ``/proc``
+    entry is treated as still live.  Stale ownership requires positive
+    extinction evidence, never merely unreadable evidence.
     """
     stat_path = Path("/proc") / str(pid) / "stat"
     if not stat_path.is_file():
@@ -191,7 +193,7 @@ def process_is_extinct(pid: int, start_ticks: int) -> bool:
         fields = raw[comm_end:].split()
         observed = int(fields[_START_TIME_FIELD_INDEX])
     except (FileNotFoundError, OSError, ValueError, IndexError):
-        return True
+        return False
     return observed != start_ticks
 
 

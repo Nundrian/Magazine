@@ -28,6 +28,7 @@ from magazine.recovery_action import (
 from magazine.recovery_transition import RecoveryTransitionError
 from magazine.run_action import persist_admit_run
 from magazine.run_lock import MagazineLockError
+from magazine.runtime_identity import get_runtime_identity
 
 RUNNING = {
     "done": ["cart-1"],
@@ -152,14 +153,19 @@ def test_owner_id_passed_unchanged(tmp_path):
     state_path, lock_path = make_paths(tmp_path)
     write_json(state_path, RUNNING)
     owner = "owner-42"
+    identity = get_runtime_identity()
     with patch("magazine.recovery_action.acquire_run_lock") as acquire, \
          patch("magazine.recovery_action.release_run_lock") as release, \
          patch("magazine.recovery_action.load_run_state", return_value=RUNNING), \
          patch("magazine.recovery_action.halt_uncertain_run", return_value=HALTED), \
          patch("magazine.recovery_action.save_run_state"):
         persist_uncertain_halt(state_path, lock_path, owner)
-    acquire.assert_called_once_with(lock_path, owner)
-    release.assert_called_once_with(lock_path, owner)
+    acquire.assert_called_once_with(
+        lock_path, owner, identity.runtime_id, identity.pid, identity.start_ticks
+    )
+    release.assert_called_once_with(
+        lock_path, owner, identity.runtime_id, identity.pid, identity.start_ticks
+    )
 
 
 def test_call_order(tmp_path):
@@ -327,6 +333,7 @@ def test_owner_id_passed_unchanged_to_lock_by_recovery(tmp_path):
     state_path, lock_path = make_paths(tmp_path)
     write_json(state_path, HALTED)
     owner = "owner-42"
+    identity = get_runtime_identity()
     with patch("magazine.recovery_action.acquire_run_lock") as acquire, \
          patch("magazine.recovery_action.release_run_lock") as release, \
          patch("magazine.recovery_action.load_run_state", return_value=HALTED), \
@@ -335,8 +342,12 @@ def test_owner_id_passed_unchanged_to_lock_by_recovery(tmp_path):
                "revision": 3, "todo": ["cart-2", "cart-3"]}), \
          patch("magazine.recovery_action.save_run_state"):
         persist_recover_halted(state_path, lock_path, owner)
-    acquire.assert_called_once_with(lock_path, owner)
-    release.assert_called_once_with(lock_path, owner)
+    acquire.assert_called_once_with(
+        lock_path, owner, identity.runtime_id, identity.pid, identity.start_ticks
+    )
+    release.assert_called_once_with(
+        lock_path, owner, identity.runtime_id, identity.pid, identity.start_ticks
+    )
 
 
 def test_call_order_by_recovery(tmp_path):

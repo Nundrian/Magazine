@@ -165,18 +165,34 @@ def result_path(run_dir: str, cartridge_id: str) -> str:
 
 
 @contextmanager
-def _hold_run_lock(lock_path: str, owner_id: str):
+def _hold_run_lock(
+    lock_path: str, owner_id: str, writer_identity: RuntimeIdentity,
+):
     """Acquire the run lock for the body and release it (always).
 
     The body performs the ownership verification *and* the durable write while
     the lock is held, so the check and the mutation are serialised against every
-    other executor of the run.
+    other executor of the run.  The runtime identity (``runtime_id`` / ``pid`` /
+    ``start_ticks``) is carried in the composite ownership key so a stale
+    executor (a different incarnation) cannot hold the lock.
     """
-    acquire_run_lock(lock_path, owner_id)
+    acquire_run_lock(
+        lock_path,
+        owner_id,
+        writer_identity.runtime_id,
+        writer_identity.pid,
+        writer_identity.start_ticks,
+    )
     try:
         yield
     finally:
-        release_run_lock(lock_path, owner_id)
+        release_run_lock(
+            lock_path,
+            owner_id,
+            writer_identity.runtime_id,
+            writer_identity.pid,
+            writer_identity.start_ticks,
+        )
 
 
 def save_cartridge_result(
@@ -249,7 +265,7 @@ def save_cartridge_result(
     state_path = os.path.join(run_dir, "state.json")
     execution_path = execution_file_path(run_dir)
 
-    with _hold_run_lock(lock_path, owner_id):
+    with _hold_run_lock(lock_path, owner_id, writer_identity):
         # (1) Fencing claim: exact ownership identity under the same lock hold.
         claim = load_execution_metadata(execution_path)
         if claim is None:

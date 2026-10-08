@@ -193,11 +193,17 @@ class TestProcessIsExtinct:
         ticks = _self_start_ticks()
         assert process_is_extinct(pid, ticks + 1) is True
 
-    def test_extinct_returns_true_for_unreadable_stat(self) -> None:
-        # A pid whose /proc entry cannot be parsed -> fail closed (extinct).
-        # We can't easily create that on a real process, but a nonexistent pid
-        # is the canonical fail-closed case.
-        assert process_is_extinct(0, 0) is True
+    def test_extinct_fails_conservative_for_unreadable_existing_stat(
+        self, monkeypatch
+    ) -> None:
+        stat_path = Path("/proc") / "123" / "stat"
+        monkeypatch.setattr(Path, "is_file", lambda self: self == stat_path)
+        monkeypatch.setattr(
+            Path,
+            "read_text",
+            lambda self: (_ for _ in ()).throw(PermissionError("denied")),
+        )
+        assert process_is_extinct(123, 456) is False
 
     def test_reused_pid_via_live_other_process_is_extinct(self) -> None:
         """Simulate a *reused* pid: the live occupant of a pid has a start_time
@@ -235,4 +241,3 @@ class TestStartTicksField:
             f"uptime={uptime_s:.1f}s; the index is reading a memory address "
             f"(e.g. start_stack), not start_time"
         )
-

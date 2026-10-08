@@ -41,6 +41,7 @@ from magazine.schema import (ExecutionOwnershipError, MagazineSchemaError,
 __all__ = [
     "EXECUTION_METADATA_FIELDS",
     "HALT_REASON_OPERATOR_RECOVERED",
+    "HALT_REASON_LOST_OWNER",
     "HALT_REASON_PRE_START_ABORTED",
     "ExecutionMetadata",
     "utc_now_iso",
@@ -74,6 +75,16 @@ HALT_REASON_OPERATOR_RECOVERED = "operator-recovered"
 #: is the only place that retires a claim with this reason and re-admits the
 #: run (with ``attempt + 1``).
 HALT_REASON_PRE_START_ABORTED = "pre-start-aborted"
+
+#: Halt reason recorded when the runner's ``POST /start`` interception positively
+#: proves the owning runtime is extinct and auto-halts the run on its behalf
+#: (``magazine.recovery_action.recover_lost_runtime``).  It is the *automated*
+#: counterpart of ``HALT_REASON_OPERATOR_RECOVERED``: that one is written by an
+#: operator during an explicit ``HALTED -> READY`` recovery, whereas
+#: ``lost-owner`` records that the run was auto-halted because its owning runtime
+#: died.  Both are written into the claim's ``halt_reason`` field during a claim
+#: retirement; both leave the run recoverable to an operator.
+HALT_REASON_LOST_OWNER = "lost-owner"
 
 
 def _is_nonempty_string(value: Any) -> bool:

@@ -10,6 +10,7 @@ import pytest
 
 from magazine.recovery import classify_recovery
 from magazine.run_lock import acquire_run_lock, release_run_lock
+from magazine.runtime_identity import get_runtime_identity
 from magazine.state import (
     STATUS_COMPLETED,
     STATUS_HALTED,
@@ -18,6 +19,11 @@ from magazine.state import (
     MagazineStateError,
     new_ready_state,
 )
+
+
+# The live process identity used to hold locks.  It is stable for the whole
+# pytest process, so a single capture is safe for every lock-holding test.
+_LIVE = get_runtime_identity()
 
 
 def _state(status: str, done=None, current=None, todo=None, revision=0) -> dict:
@@ -58,12 +64,24 @@ class TestClassifyRecovery:
         lock_path = str(tmp_path / "lock")
         with open(state_path, "w") as f:
             json.dump(state, f)
-        acquire_run_lock(lock_path, "owner-a")
+        acquire_run_lock(
+            lock_path,
+            "owner-a",
+            _LIVE.runtime_id,
+            _LIVE.pid,
+            _LIVE.start_ticks,
+        )
         try:
             result = classify_recovery(state, _lock_present(lock_path))
             assert result == "LOCKED"
         finally:
-            release_run_lock(lock_path, "owner-a")
+            release_run_lock(
+                lock_path,
+                "owner-a",
+                _LIVE.runtime_id,
+                _LIVE.pid,
+                _LIVE.start_ticks,
+            )
 
     def test_running_with_lock_is_locked(self, tmp_path):
         """A RUNNING state with a lock is LOCKED (lock takes precedence)."""
@@ -72,12 +90,24 @@ class TestClassifyRecovery:
         lock_path = str(tmp_path / "lock")
         with open(state_path, "w") as f:
             json.dump(state, f)
-        acquire_run_lock(lock_path, "owner-b")
+        acquire_run_lock(
+            lock_path,
+            "owner-b",
+            _LIVE.runtime_id,
+            _LIVE.pid,
+            _LIVE.start_ticks,
+        )
         try:
             result = classify_recovery(state, _lock_present(lock_path))
             assert result == "LOCKED"
         finally:
-            release_run_lock(lock_path, "owner-b")
+            release_run_lock(
+                lock_path,
+                "owner-b",
+                _LIVE.runtime_id,
+                _LIVE.pid,
+                _LIVE.start_ticks,
+            )
 
     def test_running_without_lock_is_uncertain(self, tmp_path):
         """A RUNNING state with no lock is UNCERTAIN."""
@@ -97,12 +127,24 @@ class TestClassifyRecovery:
         lock_path = str(tmp_path / "lock")
         with open(state_path, "w") as f:
             json.dump(state, f)
-        acquire_run_lock(lock_path, "owner-e")
+        acquire_run_lock(
+            lock_path,
+            "owner-e",
+            _LIVE.runtime_id,
+            _LIVE.pid,
+            _LIVE.start_ticks,
+        )
         try:
             result = classify_recovery(state, _lock_present(lock_path))
             assert result == "LOCKED"
         finally:
-            release_run_lock(lock_path, "owner-e")
+            release_run_lock(
+                lock_path,
+                "owner-e",
+                _LIVE.runtime_id,
+                _LIVE.pid,
+                _LIVE.start_ticks,
+            )
 
     def test_completed_without_lock_is_completed(self, tmp_path):
         """A COMPLETED state with no lock is COMPLETED."""
@@ -121,12 +163,24 @@ class TestClassifyRecovery:
         lock_path = str(tmp_path / "lock")
         with open(state_path, "w") as f:
             json.dump(state, f)
-        acquire_run_lock(lock_path, "owner-f")
+        acquire_run_lock(
+            lock_path,
+            "owner-f",
+            _LIVE.runtime_id,
+            _LIVE.pid,
+            _LIVE.start_ticks,
+        )
         try:
             result = classify_recovery(state, _lock_present(lock_path))
             assert result == "LOCKED"
         finally:
-            release_run_lock(lock_path, "owner-f")
+            release_run_lock(
+                lock_path,
+                "owner-f",
+                _LIVE.runtime_id,
+                _LIVE.pid,
+                _LIVE.start_ticks,
+            )
 
     def test_halted_without_lock_is_halted(self, tmp_path):
         """A HALTED state with no lock is HALTED."""
@@ -206,12 +260,24 @@ class TestUncertainRun:
         lock_path = str(tmp_path / "lock")
         with open(state_path, "w") as f:
             json.dump(state, f)
-        acquire_run_lock(lock_path, "owner-d")
+        acquire_run_lock(
+            lock_path,
+            "owner-d",
+            _LIVE.runtime_id,
+            _LIVE.pid,
+            _LIVE.start_ticks,
+        )
         try:
             result = classify_recovery(state, _lock_present(lock_path))
             assert result == "LOCKED"
         finally:
-            release_run_lock(lock_path, "owner-d")
+            release_run_lock(
+                lock_path,
+                "owner-d",
+                _LIVE.runtime_id,
+                _LIVE.pid,
+                _LIVE.start_ticks,
+            )
 
 
 class TestEdgeCases:
@@ -238,12 +304,24 @@ class TestEdgeCases:
 
     def test_missing_state_file_with_lock_is_locked(self, tmp_path):
         """No state, but lock present → LOCKED."""
-        acquire_run_lock(str(tmp_path / "lock"), "owner-c")
+        acquire_run_lock(
+            str(tmp_path / "lock"),
+            "owner-c",
+            _LIVE.runtime_id,
+            _LIVE.pid,
+            _LIVE.start_ticks,
+        )
         try:
             result = classify_recovery(new_ready_state([]), _lock_present(str(tmp_path / "lock")))
             assert result == "LOCKED"
         finally:
-            release_run_lock(str(tmp_path / "lock"), "owner-c")
+            release_run_lock(
+                str(tmp_path / "lock"),
+                "owner-c",
+                _LIVE.runtime_id,
+                _LIVE.pid,
+                _LIVE.start_ticks,
+            )
 
     def test_state_file_read_only(self, tmp_path):
         """State file read-only does not prevent classification."""

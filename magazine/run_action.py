@@ -15,14 +15,26 @@ startup-inspection result.
 
 The exact high-level flow is the same for the first two actions:
 
-    acquire_run_lock(lock_path, owner_id)
+    acquire_run_lock(
+        lock_path,
+        owner_id,
+        writer_identity.runtime_id,
+        writer_identity.pid,
+        writer_identity.start_ticks,
+    )
     try:
         state = load_run_state(state_path)
         next_state = <transition>(state)
         save_run_state(state_path, next_state)
         return next_state
     finally:
-        release_run_lock(lock_path, owner_id)
+        release_run_lock(
+            lock_path,
+            owner_id,
+            writer_identity.runtime_id,
+            writer_identity.pid,
+            writer_identity.start_ticks,
+        )
 
 Nothing here implements stale-lock deletion, stale-lock detection, PID or
 process checks, lock stealing, retries, polling, resume behaviour, dispatch,
@@ -154,7 +166,13 @@ def persist_begin_next_cartridge(
     persisted state is left untouched.
     """
     # 1. Acquire the existing run lock first, passing owner_id unchanged.
-    acquire_run_lock(lock_path, owner_id)
+    acquire_run_lock(
+        lock_path,
+        owner_id,
+        writer_identity.runtime_id,
+        writer_identity.pid,
+        writer_identity.start_ticks,
+    )
     try:
         run_dir = os.path.dirname(state_path)
         exec_path = execution_file_path(run_dir)
@@ -192,7 +210,13 @@ def persist_begin_next_cartridge(
     finally:
         # 7. Release the same lock with the same owner_id, whether the
         #    persistence succeeded or any step raised.
-        release_run_lock(lock_path, owner_id)
+        release_run_lock(
+            lock_path,
+            owner_id,
+            writer_identity.runtime_id,
+            writer_identity.pid,
+            writer_identity.start_ticks,
+        )
 
 
 def persist_complete_current_cartridge(
@@ -255,7 +279,13 @@ def persist_complete_current_cartridge(
     persisted state is left untouched.
     """
     # 1. Acquire the existing run lock first, passing owner_id unchanged.
-    acquire_run_lock(lock_path, owner_id)
+    acquire_run_lock(
+        lock_path,
+        owner_id,
+        writer_identity.runtime_id,
+        writer_identity.pid,
+        writer_identity.start_ticks,
+    )
     try:
         run_dir = os.path.dirname(state_path)
         exec_path = execution_file_path(run_dir)
@@ -303,7 +333,13 @@ def persist_complete_current_cartridge(
     finally:
         # 7. Release the same lock with the same owner_id, whether the
         #    persistence succeeded or any step raised.
-        release_run_lock(lock_path, owner_id)
+        release_run_lock(
+            lock_path,
+            owner_id,
+            writer_identity.runtime_id,
+            writer_identity.pid,
+            writer_identity.start_ticks,
+        )
 
 
 def persist_admit_run(
@@ -411,7 +447,13 @@ def persist_admit_run(
 
     # 1. Acquire the existing run lock first, passing owner_id unchanged --
     #    BEFORE checking whether the state file exists.
-    acquire_run_lock(lock_path, owner_id)
+    acquire_run_lock(
+        lock_path,
+        owner_id,
+        identity.runtime_id,
+        identity.pid,
+        identity.start_ticks,
+    )
     try:
         # 2. First-run admission: create the state file as a fresh ``READY``
         #    only when it does not yet exist.
@@ -529,5 +571,11 @@ def persist_admit_run(
 
     finally:
         # 7. Release the same lock with the same owner_id on every path.
-        release_run_lock(lock_path, owner_id)
+        release_run_lock(
+            lock_path,
+            owner_id,
+            identity.runtime_id,
+            identity.pid,
+            identity.start_ticks,
+        )
 

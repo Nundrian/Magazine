@@ -72,6 +72,17 @@ These are **intended applications**, not claims that packaged workflows for each
 
 Magazine's orchestration core and initial Open WebUI runner have been implemented and tested through workflow submission, validation, preparation and durable `READY` creation. At the last documented development checkpoint, **integrated execution through to `COMPLETED`, and retrieval of finished outputs, had not yet been verified end to end**.
 
+### Recorded test milestones (5 October 2026 checkpoint)
+
+These are results from the separate development repositories, **not tests run in this introductory GitHub repository**.
+
+- **Core regression sequence:** The canonical Magazine core passed **472 tests** at commit `a2eb38e`, covering its established workflow behaviour.
+- **Core synchronisation check:** All **26 embedded Python source files** in the Open WebUI runner were verified byte-for-byte against the canonical core at `a2eb38e`.
+- **Open WebUI runner regression sequence:** The native runner passed **18 tests** at commit `bef2e23`.
+- **Authenticated preparation sequence:** Real Open WebUI checks established authenticated access, user-scoped run ownership, persistent `DATA_DIR` storage, `.magazine` validation, cartridge preview and durable `READY` creation.
+- **Model admission sequence:** Logical-to-concrete model mapping and model/tool admission validation were demonstrated before execution; this did **not** establish successful downstream model invocation.
+- **End-to-end execution sequence:** The transition from `READY` through real execution to `COMPLETED`, including output retrieval, **remained unverified** at this checkpoint.
+
 The immediate priorities are:
 
 1. Complete the authenticated hand-off from a prepared run to real execution.

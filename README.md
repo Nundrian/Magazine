@@ -4,7 +4,7 @@
 
 Magazine is a **model-independent, sequential workflow runner** for organising and executing multi-stage work with large language models (LLMs). It separates the management of a workflow from the AI models carrying out its individual tasks.
 
-> **Project status:** Under development. This repository is an introductory project page, not an installable release.
+> **Project status:** Live end-to-end execution demonstrated in a development environment; the public repository is currently a project overview, **not an installable release**.
 
 ## Why Magazine exists
 
@@ -15,11 +15,11 @@ Magazine takes a different approach: **define the work as a sequence of bounded 
 ## What Magazine is designed to do
 
 - **Validate workflows before execution.** Check the structure and required fields of submitted `.magazine` workflows, and prevent invalid tasks from being dispatched.
-- **Organise work into cartridges.** Each cartridge defines one job using an `id`, a `job_type` and a non-empty `prompt`.
+- **Organise work into cartridges.** A cartridge defines one bounded task. The package format uses `id`, `model` and `prompt_file`; the legacy JSON format uses `id`, `job_type` and `prompt`.
 - **Execute work in a controlled sequence.** Keep task order and workflow progression under the runner's control, rather than relying on an LLM to manage its own orchestration.
 - **Route tasks to selected models.** Resolve the requested model to an available model at execution time, while preserving the cartridge's task instructions.
 - **Track execution state.** Maintain durable records of workflow preparation, progress and outcomes so a run can be inspected and failures can be diagnosed.
-- **Preserve results.** Make completed task outputs available for inspection and subsequent workflow stages, subject to the workflow's defined contracts.
+- **Preserve results.** Store each completed task's output durably for retrieval and inspection. Automatic passing of one cartridge's output to the next is outside Magazine's initial scope.
 - **Support different model providers.** Keep the core workflow logic independent of any one LLM. The initial integration target is Open WebUI.
 
 ## The basic idea
@@ -70,24 +70,27 @@ These are **intended applications**, not claims that packaged workflows for each
 
 ## Development status
 
-Magazine's orchestration core and initial Open WebUI runner have been implemented and tested through workflow submission, validation, preparation and durable `READY` creation. At the last documented development checkpoint, **integrated execution through to `COMPLETED`, and retrieval of finished outputs, had not yet been verified end to end**.
+Magazine's core and native Open WebUI runner have passed local regressions and live development-environment acceptance tests, including sequential model execution, durable results retrieval, in-process reload fencing and lost-runtime recovery. **This does not establish a packaged public release or production readiness.**
 
-### Recorded test milestones (5 October 2026 checkpoint)
+### Recorded test milestones (2–8 October 2026)
 
-These are results from the separate development repositories, **not tests run in this introductory GitHub repository**.
+These findings are documented in the supplied project's development reports and test artefacts; they have **not been independently rerun in this introductory repository**.
 
-- **Core regression sequence:** The canonical Magazine core passed **472 tests** at commit `a2eb38e`, covering its established workflow behaviour.
-- **Core synchronisation check:** All **26 embedded Python source files** in the Open WebUI runner were verified byte-for-byte against the canonical core at `a2eb38e`.
-- **Open WebUI runner regression sequence:** The native runner passed **18 tests** at commit `bef2e23`.
-- **Authenticated preparation sequence:** Real Open WebUI checks established authenticated access, user-scoped run ownership, persistent `DATA_DIR` storage, `.magazine` validation, cartridge preview and durable `READY` creation.
-- **Model admission sequence:** Logical-to-concrete model mapping and model/tool admission validation were demonstrated before execution; this did **not** establish successful downstream model invocation.
-- **End-to-end execution sequence:** The transition from `READY` through real execution to `COMPLETED`, including output retrieval, **remained unverified** at this checkpoint.
+- **Core regression:** **560/560 tests passed** on the canonical core at commit `381b361` (8 October), including workflow, state, execution and recovery behaviour.
+- **Native runner regression:** **45/45 tests passed** at runner commit `f663e0a` (8 October), covering native Open WebUI integration and execution/recovery cases.
+- **Embedded-code integrity:** **28/28 Python source files** in the runner's embedded Magazine core matched the canonical source; the deployed Event Function also matched the committed runner by SHA-256.
+- **Authenticated preparation:** Live Open WebUI checks demonstrated workflow validation, cartridge preview, user-scoped ownership, model/tool admission and durable creation of `READY` runs.
+- **Native end-to-end execution:** A live **two-cartridge** Bonsai 2 27B run progressed `READY → RUNNING → COMPLETED` and returned the expected results (`MAGAZINE_FIRST_OK` and `323`) through the results API.
+- **Sequential isolation and cleanup:** A separate live **three-cartridge** audit completed in order with distinct model chats, three persisted results and no newly created chats left behind.
+- **Tool forwarding:** A live audit recorded forwarding of the `development_toolkit` selection and a tool call, but **did not verify the intended on-disk command marker**; full external side-effect success was not established.
+- **FM-1 reload fencing:** A live in-process Event Function reload preserved runtime identity and ownership, with no stale writes; a second start was rejected with HTTP **409** after the run had already completed.
+- **FM-2 lost-runtime recovery:** Following a genuine Open WebUI process replacement, a lost-owner run halted safely, was recovered explicitly and ultimately completed all three long cartridges over subsequent attempts, with stale-owner writes fenced off.
 
 The immediate priorities are:
 
-1. Complete the authenticated hand-off from a prepared run to real execution.
-2. Demonstrate a full workflow from submission through execution to `COMPLETED`.
-3. Verify the output and failure paths with end-to-end tests.
-4. Publish installation, configuration and usage instructions once a working release is verified.
+1. Consolidate the verified development code and deployment procedure into a reproducible release.
+2. Test installation, authentication, recovery and error handling across supported environments.
+3. Resolve known model/tool compatibility limitations and improve operational diagnostics.
+4. Publish installation, configuration and usage instructions once release acceptance is complete.
 
 **No source code or installation procedure is provided in this introductory repository yet.** Future capabilities such as multi-agent coordination, worker pools or multi-Magazine orchestration are not part of the initial release claim.

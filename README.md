@@ -55,8 +55,6 @@ Its principal parts are:
 - **Host runner:** the integration layer that accepts workflows, performs the necessary access and model checks, and invokes the core. Open WebUI is the initial host.
 - **Cartridges:** individual, bounded units of work that the core can validate and dispatch.
 
-Related tools such as **Fresh Worker** (isolated task execution) and the **research evidence ledger** (evidence tracking) are separate projects. They may complement Magazine, but are not described here as integrated Magazine features.
-
 ## Intended uses
 
 Magazine is intended for jobs that benefit from a dependable sequence of distinct LLM tasks, including:

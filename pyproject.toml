@@ -15,3 +15,13 @@ dependencies = [
 
 [tool.setuptools.packages.find]
 include = ["magazine*"]
+
+[tool.pytest.ini_options]
+# The Magazine test suite lives exclusively in tests/ (560 tests). The preserved
+# FM-1 RUNNING-state acceptance evidence in
+# fm1-running-state-acceptance-evidence/ is release evidence (regression tests,
+# scripts, live JSON, source), NOT part of this suite. Limiting default collection
+# to tests/ keeps root-level `pytest` from auto-collecting, inflating, or erroring
+# on those evidence copies (their path assumptions target the /workspace/evidence/
+# sibling layout). The canonical runnable copies remain in /workspace/evidence/.
+testpaths = ["tests"]

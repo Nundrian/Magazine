@@ -20,8 +20,9 @@ include = ["magazine*"]
 # The Magazine test suite lives exclusively in tests/ (560 tests). The preserved
 # FM-1 RUNNING-state acceptance evidence in
 # fm1-running-state-acceptance-evidence/ is release evidence (regression tests,
-# scripts, live JSON, source), NOT part of this suite. Limiting default collection
-# to tests/ keeps root-level `pytest` from auto-collecting, inflating, or erroring
-# on those evidence copies (their path assumptions target the /workspace/evidence/
-# sibling layout). The canonical runnable copies remain in /workspace/evidence/.
+# scripts, live JSON, source), NOT part of this core suite. Keeping default
+# collection limited to tests/ means root-level `pytest` reports only the core
+# unit suite and never mixes the archived acceptance `*_test.py` files into it.
+# The evidence suites are self-contained (all paths resolve relative to __file__),
+# so they run from any fresh checkout via `python -m unittest` from that directory.
 testpaths = ["tests"]

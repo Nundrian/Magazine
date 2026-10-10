@@ -58,9 +58,21 @@ FM1 = _load_fm1()
 # ============================================================================
 # Canonical schema module (magazine/schema.py).  Self-contained (json/typing only),
 # loadable by file path without polluting sys.path.
+#
+# This test ships inside the Magazine repository (fm1-running-state-acceptance-
+# evidence/).  The canonical schema package sits at <repo-root>/magazine/schema.py,
+# i.e. one level above this directory.  The path is resolved from __file__ so the
+# suite works from any current working directory and any fresh checkout, with no
+# dependence on the original /workspace/evidence/ sibling layout.
 # ============================================================================
 def _load_schema():
-    path = os.path.join(HERE, "..", "Magazine", "magazine", "schema.py")
+    path = os.path.join(HERE, "..", "magazine", "schema.py")
+    if not os.path.isfile(path):
+        raise FileNotFoundError(
+            "cannot locate the canonical magazine schema; the FM-1 evidence suite "
+            "must be run from a Magazine checkout where magazine/schema.py is one "
+            "level above fm1-running-state-acceptance-evidence/ (path=%s)" % path
+        )
     spec = importlib.util.spec_from_file_location("mag_schema", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)

@@ -208,7 +208,7 @@ def make_open_webui_dispatch(
         api_key: Bearer API key used for every request.
         tool_ids: Optional sequence of Open WebUI tool DB IDs already
             selected by the surrounding harness/operator, e.g. a list
-            of ``"development_toolkit"``.  Magazine forwards them verbatim
+            containing ``"host_tool_id"``.  Magazine forwards them verbatim
             to each completion request as ``tool_ids``; Open WebUI resolves
             them into the tools actually available in each fresh chat.
             Magazine does not query, resolve or manage tools.  When omitted,

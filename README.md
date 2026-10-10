@@ -2,7 +2,7 @@
 
 Magazine is a deterministic sequential executor for pre-designed, capability-sized workflow cartridges. A stronger model or a human designs the workflow in advance. Magazine runs its cartridges in list order, resolves each assigned model, sends its prompt into a fresh execution context and saves the raw result before advancing.
 
-The harness provides its normal toolkit: browser, files, coding tools, terminals, Fresh Worker, Ledger or other installed tools. A cartridge prompt can ask the model to use them. Magazine does not provision, select or check their availability. Fresh Worker and Ledger are harness tools, not Magazine subsystems.
+The host harness provides the capabilities available to each fresh execution context, such as browser, file, coding or terminal access. Magazine does not install, initialise or implement those capabilities. A harness-specific adapter may carry operator-selected capability identifiers into a request, while the host remains responsible for resolving and enforcing access to them.
 
 ## Install and test
 
@@ -79,8 +79,8 @@ async def main():
             "reasoning": "YOUR_SECOND_MODEL_ID",
         },
         # Optional: Open WebUI tool DB IDs already chosen by the
-        # surrounding harness/operator, e.g. the Development Toolkit:
-        # tool_ids=["development_toolkit"],
+        # surrounding harness/operator:
+        # tool_ids=["host_tool_id"],
     )
 
 print(asyncio.run(main()))
@@ -88,7 +88,7 @@ print(asyncio.run(main()))
 
 Supply real credentials at runtime. The adapter creates a distinct saved chat, user/assistant message IDs and session ID for each cartridge. Each completion contains only that cartridge's user prompt and assigned model. It explicitly requests `features.memory = false`; conversational messages and earlier results are never handed to the next cartridge. Chat title, tag and follow-up background tasks remain disabled as in the base version.
 
-Optional `tool_ids` carries the harness-selected Open WebUI tool DB IDs (e.g. `tool_ids=["development_toolkit"]`). Magazine forwards those IDs verbatim into each completion request as `"tool_ids"`; Open WebUI resolves them into the tools available in the fresh chat. Magazine does not discover, provision, inspect or manage tools. When `tool_ids` is omitted (or empty), no tool IDs are sent and the previous behaviour is preserved. Availability of the harness's ordinary tools and enforcement of the memory flag need confirmation on the deployed Open WebUI installation; mocked request tests cannot establish server behaviour.
+Optional `tool_ids` carries harness-selected Open WebUI tool DB IDs (for example, `tool_ids=["host_tool_id"]`). The adapter forwards those IDs verbatim into each completion request as `"tool_ids"`; Open WebUI resolves them into the tools available in the fresh chat and enforces the authenticated user's access. The adapter does not resolve, install, initialise or execute tools itself. The separate Open WebUI Run Builder obtains the authenticated user's tool catalogue from Open WebUI, validates selected IDs against that catalogue and passes only those selections to the adapter. When `tool_ids` is omitted (or empty), no tool IDs are sent. Actual capability availability remains an Open WebUI deployment property; mocked request tests establish payload behaviour, not live server availability.
 
 After each cartridge's result is durably persisted, the Open WebUI adapter issues `DELETE /api/v1/chats/{id}` to remove the temporary saved chat it created for that cartridge. This cleanup is best-effort and deliberately non-fatal: a failed deletion never invalidates the already-persisted result or corrupts run state, so the generic dispatch contract is otherwise unchanged. Each cartridge always gets a fresh chat (contexts are never handed to a later cartridge), so a run that completes normally leaves no net-new chats on the server.
 
@@ -119,4 +119,4 @@ An interrupted RUNNING state without a lock is uncertain. Startup inspection cla
 
 ## Outside Magazine v1
 
-Generic input delivery, automatic file-to-prompt injection, inter-cartridge artefact passing, output verification, model evaluation, adaptive routing, tool provisioning and special Ledger/Fresh Worker integration are outside this product. They are not unfinished Magazine requirements. Workflow designers prepare self-contained prompts before the runner starts.
+Generic input delivery, automatic file-to-prompt injection, inter-cartridge artefact passing, output verification, model evaluation, adaptive routing, tool provisioning and standalone capability integration are outside this product. They are not unfinished Magazine requirements. Workflow designers prepare self-contained prompts before the runner starts.

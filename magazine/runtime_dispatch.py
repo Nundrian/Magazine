@@ -1,10 +1,10 @@
 """Magazine's injected dispatch boundary.
 
 Magazine chooses the cartridge's assigned model and sends the cartridge prompt
-to an injected ``dispatch(prompt, model_id)`` callable.  The harness is
-responsible for whatever normal browser, file, coding, Fresh Worker, Ledger or
-other tools are available inside that fresh execution context; Magazine does
-not discover, select, provision or preflight those tools.
+to an injected ``dispatch(prompt, model_id)`` callable.  The host harness is
+responsible for the capabilities available inside that fresh execution
+context; generic Magazine orchestration does not discover, select, provision
+or preflight them.
 """
 
 from __future__ import annotations

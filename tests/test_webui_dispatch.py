@@ -306,10 +306,10 @@ def test_supplied_tool_ids_appear_in_completion_request(monkeypatch):
     """Harness-selected tool IDs are carried verbatim into the completion body."""
     _pin_ids(monkeypatch)
     client = _FakeClient(_responses(MODEL_A))
-    dispatch = _dispatch(monkeypatch, client, tool_ids=["development_toolkit"])
+    dispatch = _dispatch(monkeypatch, client, tool_ids=["host_workspace_tool"])
     asyncio.run(dispatch(PROMPT, MODEL_A))
     comp = client.calls[1]["body"]
-    assert comp["tool_ids"] == ["development_toolkit"]
+    assert comp["tool_ids"] == ["host_workspace_tool"]
     # Tool context is not injected into the fresh-chat creation body.
     assert "tool_ids" not in client.calls[0]["body"]["chat"]
 
@@ -317,7 +317,7 @@ def test_supplied_tool_ids_appear_in_completion_request(monkeypatch):
 def test_multiple_tool_ids_preserve_order_and_values(monkeypatch):
     """Caller-supplied order and values are preserved through dispatch."""
     _pin_ids(monkeypatch)
-    supplied = ["alpha_toolkit", "development_toolkit", "beta_toolkit"]
+    supplied = ["host_tool_a", "host_tool_b", "host_tool_c"]
     client = _FakeClient(_responses(MODEL_A))
     dispatch = _dispatch(monkeypatch, client, tool_ids=tuple(supplied))
     asyncio.run(dispatch(PROMPT, MODEL_A))
@@ -327,14 +327,14 @@ def test_multiple_tool_ids_preserve_order_and_values(monkeypatch):
 def test_dispatch_uses_internal_immutable_copy_of_tool_ids(monkeypatch):
     """A later mutation of the caller's list must not affect dispatch."""
     _pin_ids(monkeypatch)
-    supplied = ["development_toolkit"]
+    supplied = ["host_workspace_tool"]
     client = _FakeClient(_responses(MODEL_A))
     dispatch = _dispatch(monkeypatch, client, tool_ids=supplied)
     supplied.append("spoiled")
     supplied[0] = "spoiled"
     supplied.append("spoiled")
     asyncio.run(dispatch(PROMPT, MODEL_A))
-    assert client.calls[1]["body"]["tool_ids"] == ["development_toolkit"]
+    assert client.calls[1]["body"]["tool_ids"] == ["host_workspace_tool"]
 
 
 def test_empty_tool_ids_send_no_tool_ids_field(monkeypatch):

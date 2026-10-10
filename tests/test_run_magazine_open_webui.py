@@ -83,9 +83,9 @@ def test_tool_ids_forwarded_to_dispatch_factory(mock_factory, mock_prepare, mock
     mock_loop.return_value = run_loop.MultiCartridgeResult(final_state=final)
     asyncio.run(run_magazine_open_webui(
         MAGAZINE_PATH, STATE_DIR, OWNER_ID, BASE_URL, API_KEY, MODEL_MAP,
-        tool_ids=["development_toolkit"],
+        tool_ids=["host_workspace_tool"],
     ))
-    mock_factory.assert_called_once_with(BASE_URL, API_KEY, tool_ids=["development_toolkit"])
+    mock_factory.assert_called_once_with(BASE_URL, API_KEY, tool_ids=["host_workspace_tool"])
 
 
 @patch("magazine.async_runner.run_loop.run_all_cartridges", new_callable=AsyncMock)

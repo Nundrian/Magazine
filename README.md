@@ -66,6 +66,16 @@ Magazine is intended for jobs that benefit from a dependable sequence of distinc
 
 These are **intended applications**, not claims that packaged workflows for each use case are already available.
 
+## Community research question: can free-tier AI plan for smaller local models?
+
+Magazine's broader motivation is to help **smaller, locally run LLMs tackle jobs too large or complex to handle reliably in one prompt**. A more capable hosted model could plan the overall job and prepare suitably bounded cartridges; Magazine would then manage their sequential execution by a local model. The quality of the initial decomposition matters, and Magazine itself does **not** automatically generate those plans or cartridges.
+
+An open question for the community is whether **free or already-included consumer AI access** is good enough for this planning stage. Candidates to investigate include ChatGPT, Claude, Gemini, Microsoft Copilot (including relevant Microsoft 365 offerings), Meta AI and Grok. Their free access, underlying models, limits and policies may change; none is endorsed or verified here for cartridge generation. A free chat interface should not be confused with free automated API access: preparation and import may be manual.
+
+If you try this, reports are welcome, including the planning service and model (where known), date/tier, original objective, number and scope of cartridges, the local execution model and hardware, completed results, failures and human intervention required. Reproducible, privacy-safe examples and unsuccessful runs are as valuable as successful ones. **The project maintainer is not claiming to have benchmarked these services.**
+
+ASTER is a **separate, optional prompt-design workflow** that may help with task fidelity, distributed anchoring and context control; it is not required by Magazine or embedded in its runtime.
+
 ## Development status
 
 Magazine's core and native Open WebUI runner have passed local regressions and live development-environment acceptance tests, including sequential model execution, durable results retrieval, in-process reload fencing and lost-runtime recovery. **This does not establish a packaged public release or production readiness.**

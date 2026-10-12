@@ -102,3 +102,7 @@ The immediate priorities are:
 4. Publish installation, configuration and usage instructions once release acceptance is complete.
 
 **No source code or installation procedure is provided in this introductory repository yet.** Future capabilities such as multi-agent coordination, worker pools or multi-Magazine orchestration are not part of the initial release claim.
+
+## Licence
+
+MIT. See [LICENSE](LICENSE). This licence applies to the material currently published in this repository; the canonical Magazine core and runner implementations are not yet included. Their release and third-party dependencies must be reviewed before publication.

@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "magazine"
+version = "0.1.0b5"
+description = "Deterministic sequential executor for pre-designed workflow cartridges"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "httpx>=0.27",
+    "pyyaml>=6",
+]
+
+[tool.setuptools.packages.find]
+include = ["magazine*"]
+
+[tool.pytest.ini_options]
+# The Magazine core test suite lives exclusively in tests/. The preserved
+# FM-1 RUNNING-state acceptance evidence in
+# fm1-running-state-acceptance-evidence/ is release evidence (regression tests,
+# scripts, live JSON, source), NOT part of this core suite. Keeping default
+# collection limited to tests/ means root-level `pytest` reports only the core
+# unit suite and never mixes the archived acceptance `*_test.py` files into it.
+# The evidence suites are self-contained (all paths resolve relative to __file__),
+# so they run from any fresh checkout via `python -m unittest` from that directory.
+testpaths = ["tests"]

@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.release-venv/
+.uv-cache/
+.build/
+venv/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local configuration and secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Saved chat evidence can contain user and model content
+evidence/
+private-backups/
+review_*.py
+record_checks.py
+prepare_candidate.py
+refresh_manifests.py
+finalize_candidate.py

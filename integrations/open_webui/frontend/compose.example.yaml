@@ -1,0 +1,19 @@
+services:
+  open-webui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: magazine-open-webui:0.1.0-beta.5
+    ports:
+      - "3000:8080"
+    environment:
+      WEBUI_SECRET_KEY: "${WEBUI_SECRET_KEY:?Set WEBUI_SECRET_KEY to a long random secret}"
+      OLLAMA_BASE_URL: "http://host.docker.internal:11434"
+    volumes:
+      - open-webui:/app/backend/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+volumes:
+  open-webui:

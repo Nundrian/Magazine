@@ -1,0 +1,4570 @@
+"""
+title: Magazine
+author: Nundrian
+author_url: https://github.com/Nundrian/Magazine
+version: 0.1.0-beta.5
+required_open_webui_version: 0.11.3
+requirements: httpx==0.28.1, PyYAML==6.0.3
+"""
+
+# Self-contained Open WebUI Event Function embedding the verified Magazine
+# core as a base64 ZIP. It exposes an authenticated standalone /magazine page
+# and /api/magazine/* routes. Runs are bound to get_current_user().id and are
+# stored below open_webui.config.DATA_DIR/magazine/runs. The shared workflow
+# library is readable by authenticated users and writable only by admins.
+# Credentials are used in memory for same-server dispatch and are never saved.
+import sys
+import os
+import json
+import traceback
+import base64
+import hashlib
+import shutil
+import zipfile
+import asyncio
+import uuid
+import contextlib
+import errno
+import re
+import stat
+import tempfile
+import io
+import ctypes
+import time
+import unicodedata
+import zlib
+from pathlib import Path, PureWindowsPath
+from urllib.parse import urlsplit
+
+# ---------------------------------------------------------------------------
+# Pydantic request bodies. owner_id is NOT a client field: ownership is set
+# on the server side from the authenticated OWUI user.
+# ---------------------------------------------------------------------------
+try:
+    from pydantic import BaseModel
+    class _CreateRunBody(BaseModel):
+        magazine: str = ""
+        project_id: str = ""
+        model_map: dict = None
+        tool_ids: list = None
+    class _PackageBody(BaseModel):
+        file_name: str = ""
+        file_data_b64: str = ""
+        file_type: str = "magazine"
+        document_json: str = ""
+    class _ImportProjectBody(BaseModel):
+        file_name: str = ""
+        file_data_b64: str = ""
+        project_id: str = ""
+except Exception:
+    BaseModel = None
+    _CreateRunBody = None
+    _PackageBody = None
+    _ImportProjectBody = None
+
+# FastAPI (and therefore `Request`) is only available at runtime inside the
+# OWUI container. Guard the import so the module also imports cleanly in
+# environments without FastAPI (dev/test). FastAPI uses the parameter
+# ANNOTATION to inject the Starlette request, so the alias must be the real
+# `fastapi.Request` at runtime.
+try:
+    from fastapi import Request as _FastAPIRequest
+except Exception:  # pragma: no cover
+    _FastAPIRequest = object()
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+_PKG_DIR = "/tmp/_mag_pkg"
+_FUNCTION_VERSION = "0.1.0-beta.5"
+_BASE_URL_ENV = "MAGAZINE_OPEN_WEBUI_BASE_URL"
+_DEFAULT_OPEN_WEBUI_PORT = 8080
+# Persistent per-user run root; actual value resolved at runtime from
+# open_webui.config.DATA_DIR (see _runs_root). This fallback is only used if
+# the OWUI config is unavailable (e.g. out-of-process tests).
+_RUNS_ROOT_FALLBACK = "/tmp/_mag_runs"
+# In-process background run tasks (prevents GC of the run tasks).
+_TASKS = set()
+# Owner/run keyed handles expose only this process generation's task and
+# dispatch adapter. They are never persisted and cannot cross user scope.
+_RUN_HANDLES = {}
+
+# Catalogue limits apply before the canonical parser runs. Published projects
+# are never edited or replaced. The Linux OWUI runtime supports descriptor-relative,
+# no-follow opens; fail closed elsewhere rather than use a racy path fallback.
+_LIBRARY_ROOT_DEFAULT = "/app/backend/data/magazine/library"
+_LIBRARY_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}\Z")
+_LIBRARY_MAX_WORKFLOWS = 128
+_LIBRARY_MAX_ROOT_ENTRIES = 1024
+_LIBRARY_MAX_FILES = 256
+_LIBRARY_MAX_ENTRIES = 512
+_LIBRARY_MAX_DEPTH = 8
+_LIBRARY_MAX_FILE_BYTES = 1024 * 1024
+_LIBRARY_MAX_MANIFEST_BYTES = 64 * 1024
+_LIBRARY_MAX_TOTAL_BYTES = 4 * 1024 * 1024
+_LIBRARY_MAX_ARCHIVE_BYTES = 8 * 1024 * 1024
+_LIBRARY_MAX_PATH_BYTES = 240
+_LIBRARY_MAX_EXPANSION_RATIO = 100
+_LIBRARY_IMPORT_LOCK_SECONDS = 5
+
+
+def _default_open_webui_base_url(environ=None):
+    """Return Magazine's same-container Open WebUI callback URL.
+
+    An explicit environment override is retained verbatim for validation at
+    route use. Otherwise the Function calls the Open WebUI backend over its
+    loopback listener, using Open WebUI's PORT when it is a valid TCP port.
+    """
+    env = os.environ if environ is None else environ
+    explicit = str(env.get(_BASE_URL_ENV, "") or "").strip()
+    if explicit:
+        return explicit
+    raw_port = str(env.get("PORT", _DEFAULT_OPEN_WEBUI_PORT) or "").strip()
+    try:
+        port = int(raw_port)
+    except (TypeError, ValueError):
+        port = _DEFAULT_OPEN_WEBUI_PORT
+    if not 1 <= port <= 65535:
+        port = _DEFAULT_OPEN_WEBUI_PORT
+    return f"http://127.0.0.1:{port}"
+
+
+def _normalize_open_webui_base_url(value):
+    """Validate an operator-controlled Open WebUI callback base URL."""
+    raw = str(value or "").strip()
+    if not raw:
+        raise ValueError("Open WebUI base URL must not be empty")
+    try:
+        parsed = urlsplit(raw)
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError("Open WebUI base URL has an invalid port") from exc
+    if parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname:
+        raise ValueError("Open WebUI base URL must be an absolute HTTP(S) URL")
+    if parsed.username is not None or parsed.password is not None:
+        raise ValueError("Open WebUI base URL must not contain credentials")
+    if parsed.query or parsed.fragment or parsed.path not in {"", "/"}:
+        raise ValueError("Open WebUI base URL must not contain a path, query, or fragment")
+    if port is not None and not 1 <= port <= 65535:
+        raise ValueError("Open WebUI base URL has an invalid port")
+    return f"{parsed.scheme.lower()}://{parsed.netloc}".rstrip("/")
+
+async def _get_token(request: _FastAPIRequest) -> str:
+    """Raw bearer token from the request, mirroring OWUI's get_current_user
+    resolution order (Authorization header, then the `token` cookie, then
+    request.state.token). Used ONLY in memory for the in-process dispatch;
+    never written to disk, state, bundles, fixtures, or logs.
+
+    Defined at module level (not nested) so FastAPI can recognize the
+    `Request` annotation when resolving this dependency; a nested closure
+    combined with a path param is not recognized by this FastAPI version."""
+    token = None
+    try:
+        auth = request.headers.get("Authorization")
+    except Exception:
+        auth = None
+    if auth:
+        token = auth.split(" ", 1)[-1].strip()
+    if not token and "token" in request.cookies:
+        token = request.cookies.get("token")
+    if not token and hasattr(request.state, "token") and request.state.token:
+        token = getattr(request.state.token, "credentials",
+                        request.state.token)
+    return token or ""
+
+_MAG_ZIP_B64 = """
+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
+YW5zaXRpb24ucHlQSwECFAMUAAAACAAAACEAeW4TBkwCAACxBQAAHAAAAAAAAAAAAAAApIEK4QAA
+bWFnYXppbmUvcnVudGltZV9kaXNwYXRjaC5weVBLAQIUAxQAAAAIAAAAIQD2Hq83twwAAJAjAAAc
+AAAAAAAAAAAAAACkgZDjAABtYWdhemluZS9ydW50aW1lX2lkZW50aXR5LnB5UEsBAhQDFAAAAAgA
+AAAhAE5ZAerPBwAAnBsAABIAAAAAAAAAAAAAAKSBgfAAAG1hZ2F6aW5lL3NjaGVtYS5weVBLAQIU
+AxQAAAAIAAAAIQCv+HhduAIAAAoGAAAeAAAAAAAAAAAAAACkgYD4AABtYWdhemluZS9zdGFydHVw
+X2luc3BlY3Rpb24ucHlQSwECFAMUAAAACAAAACEApAoYMhEKAADRIgAAEQAAAAAAAAAAAAAApIF0
++wAAbWFnYXppbmUvc3RhdGUucHlQSwECFAMUAAAACAAAACEAIc+nt/oDAAB6CQAAFwAAAAAAAAAA
+AAAApIG0BQEAbWFnYXppbmUvc3RhdGVfc3RvcmUucHlQSwECFAMUAAAACAAAACEA553aY78XAABn
+XwAAGgAAAAAAAAAAAAAApIHjCQEAbWFnYXppbmUvd2VidWlfZGlzcGF0Y2gucHlQSwUGAAAAAB0A
+HQDNBwAA2iEBAAAA
+"""
+
+
+# ---------------------------------------------------------------------------
+# Magazine import bootstrap (lazy, idempotent, extracted to /tmp)
+# ---------------------------------------------------------------------------
+_MAG = {}
+
+def _ensure_magazine():
+    pkg_dir = _PKG_DIR
+
+    def _expected_hash():
+        # Identity of the embedded package (the decoded zip content).
+        return hashlib.sha256(base64.b64decode(_MAG_ZIP_B64.strip())).hexdigest()
+
+    def _cache_trusted():
+        # The on-disk extraction is trusted only when it is complete AND its
+        # manifest records the embedded package's content hash.  No manifest
+        # or a hash mismatch means a stale/incomplete extraction -> replace.
+        mag_dir = os.path.join(pkg_dir, "magazine")
+        manifest = os.path.join(pkg_dir, "_manifest.json")
+        if not os.path.isdir(mag_dir) or not os.path.isfile(manifest):
+            return False
+        try:
+            with open(manifest, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+        except Exception:
+            return False
+        return data.get("hash") == _expected_hash()
+
+    if not _cache_trusted():
+        # Invalid or missing cache (wrong revision / incomplete / no manifest):
+        # safely replace the whole extraction, then re-extract the genuine
+        # embedded package and record its identity.  This only runs when the
+        # cache is untrustworthy, not on every invocation (valid cache is
+        # reused), and no second loader is introduced.
+        mag_dir = os.path.join(pkg_dir, "magazine")
+        manifest = os.path.join(pkg_dir, "_manifest.json")
+        if os.path.isdir(mag_dir):
+            shutil.rmtree(mag_dir, ignore_errors=True)
+        if os.path.isfile(manifest):
+            os.remove(manifest)
+        os.makedirs(pkg_dir, exist_ok=True)
+        # Drop any already-imported magazine modules so the fresh extraction is
+        # what gets imported next (in-process reload / stale-revision path).
+        for _k in [k for k in list(sys.modules)
+                   if k == "magazine" or k.startswith("magazine.")]:
+            del sys.modules[_k]
+        tmp = os.path.join(pkg_dir, "_pkg.zip")
+        with open(tmp, "wb") as f:
+            f.write(base64.b64decode(_MAG_ZIP_B64.strip()))
+        with zipfile.ZipFile(tmp) as zf:
+            zf.extractall(pkg_dir)
+        with open(manifest, "w", encoding="utf-8") as fh:
+            json.dump({"hash": _expected_hash()}, fh)
+    if pkg_dir not in sys.path:
+        sys.path.insert(0, pkg_dir)
+    import magazine  # noqa: F401
+    import magazine.async_runner as ar  # noqa: F401
+    import magazine.webui_dispatch as wd  # noqa: F401
+    import magazine.state as state  # noqa: F401
+    import magazine.state_store as ss  # noqa: F401
+    import magazine.recovery_transition as rt  # noqa: F401
+    import magazine.document as doc  # noqa: F401
+    import magazine.run_preparation as rp  # noqa: F401
+    import magazine.run_action as ra  # noqa: F401
+    import magazine.run_lock as rl  # noqa: F401
+    import magazine.run_loop as loop  # noqa: F401
+    import magazine.result_store as rs  # noqa: F401
+    import magazine.runtime_identity as ri  # noqa: F401
+    import magazine.recovery_action as racton  # noqa: F401
+    import magazine.execution_meta as em  # noqa: F401
+    import magazine.run_control as rc  # noqa: F401
+    return dict(
+        ok=True, file=getattr(magazine, "__file__", None),
+        ar=ar, wd=wd, state=state, ss=ss, rt=rt, doc=doc,
+        rp=rp, ra=ra, rl=rl, loop=loop, rs=rs,
+        ri=ri, racton=racton, em=em, rc=rc,
+    )
+
+def _mag():
+    if not _MAG:
+        try:
+            d = _ensure_magazine()
+            _MAG.update(d)
+        except Exception:
+            _MAG.update(dict(ok=False, error=traceback.format_exc()))
+    return _MAG
+
+
+# ---------------------------------------------------------------------------
+# Per-run path helpers (user-scoped, persistent under DATA_DIR)
+# ---------------------------------------------------------------------------
+def _runs_root():
+    """OWUI data directory (confirmed at runtime: /app/backend/data)."""
+    try:
+        from open_webui import config as _cfg
+        return str(Path(_cfg.DATA_DIR) / "magazine" / "runs")
+    except Exception:
+        return _RUNS_ROOT_FALLBACK
+
+def _run_base(owner_id, rid):
+    return os.path.join(_runs_root(), str(owner_id), str(rid))
+
+def _state_dir(owner_id, rid):
+    return os.path.join(_run_base(owner_id, rid), "run")
+
+def _state_path(owner_id, rid):
+    return os.path.join(_state_dir(owner_id, rid), "state.json")
+
+def _lock_path(owner_id, rid):
+    return os.path.join(_state_dir(owner_id, rid), ".lock")
+
+def _mag_path(owner_id, rid):
+    return os.path.join(_run_base(owner_id, rid), "magazine.json")
+
+def _meta_path(owner_id, rid):
+    return os.path.join(_run_base(owner_id, rid), "meta.json")
+
+def _now():
+    import datetime
+    return datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+def _load_meta(owner_id, rid):
+    mp = _meta_path(owner_id, rid)
+    try:
+        with open(mp) as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+def _save_meta(owner_id, rid, meta):
+    mp = _meta_path(owner_id, rid)
+    os.makedirs(os.path.dirname(mp), exist_ok=True)
+    with open(mp, "w") as f:
+        json.dump(meta, f)
+
+
+# ---------------------------------------------------------------------------
+# Token-free model / tool discovery (OWUI in-process registry)
+# ---------------------------------------------------------------------------
+def _dump(obj):
+    if hasattr(obj, "model_dump"):
+        try:
+            return obj.model_dump()
+        except Exception:
+            pass
+    if hasattr(obj, "dict"):
+        try:
+            return obj.dict()
+        except Exception:
+            pass
+    return obj
+
+class _MockRequest:
+    def __init__(self, a):
+        self.app = a
+    def __getattr__(self, name):
+        return getattr(self.app, name, None)
+
+def _mock(app):
+    return _MockRequest(app)
+
+async def _fetch_models(app, user):
+    """Discover models from the OWUI user-scoped registry (authenticated)."""
+    try:
+        from open_webui.utils.models import get_all_models, get_filtered_models
+        models = await get_all_models(_mock(app), refresh=False, user=user)
+        return await get_filtered_models(models, user)
+    except Exception:
+        return []
+
+async def _fetch_tools(app, user):
+    """Discover tools from the OWUI user-scoped registry (authenticated).
+
+    The OWUI 0.11.3 Tools.get_tools signature is
+        async def get_tools(defer_content: bool = False, user_id: str | None = None)
+    (no user_group_ids parameter) — matching the proven probe form that returned
+    the user's tools. Ownership scoping is done via user_id; the native
+    /api/v1/tools/ route applies its own group/access grants on top.
+    """
+    try:
+        from open_webui.models.tools import Tools
+        tools = await Tools.get_tools(defer_content=True, user_id=user.id)
+        return [_dump(t) for t in tools]
+    except Exception:
+        return []
+
+
+# ---------------------------------------------------------------------------
+# Admission validation (pure, server-side, testable without OWUI)
+# ---------------------------------------------------------------------------
+def _extract_model_id(item):
+    """Extract the canonical model identifier from a model object / dict / str."""
+    if item is None:
+        return ""
+    if isinstance(item, str):
+        return item.strip()
+    if isinstance(item, dict):
+        for k in ("id", "model", "name"):
+            v = item.get(k)
+            if v not in (None, ""):
+                return str(v)
+        return ""
+    for attr in ("id", "model", "name"):
+        v = getattr(item, attr, None)
+        if v not in (None, ""):
+            return str(v)
+    return ""
+
+def _extract_tool_id(item):
+    """Extract the canonical tool identifier from a tool object / dict / str."""
+    if item is None:
+        return ""
+    if isinstance(item, str):
+        return item.strip()
+    if isinstance(item, dict):
+        for k in ("id", "name"):
+            v = item.get(k)
+            if v not in (None, ""):
+                return str(v)
+        return ""
+    for attr in ("id", "name"):
+        v = getattr(item, attr, None)
+        if v not in (None, ""):
+            return str(v)
+    return ""
+
+def _available_model_ids(models):
+    """Set of available model ids (user-scoped)."""
+    ids = set()
+    for m in models or []:
+        mid = _extract_model_id(m)
+        if mid:
+            ids.add(mid)
+    return ids
+
+def _available_tool_ids(tools):
+    """Set of available tool ids (user-scoped)."""
+    ids = set()
+    for t in tools or []:
+        tid = _extract_tool_id(t)
+        if tid:
+            ids.add(tid)
+    return ids
+
+def _document_logical_keys(document):
+    """Logical model keys (cartridge job_type/model) present in the document."""
+    keys = set()
+    if not isinstance(document, dict):
+        return keys
+    for c in document.get("cartridges") or []:
+        if not isinstance(c, dict):
+            continue
+        for field in ("job_type", "model"):
+            v = c.get(field)
+            if v not in (None, ""):
+                keys.add(str(v))
+                break
+    return keys
+
+def _validate_admission(document, model_map, tool_ids, available_models,
+                        available_tools):
+    """
+    Server-side admission validation for a READY run. Pure function — no OWUI
+    imports — so it is testable in isolation.
+
+    Returns a list of human-readable error strings; an empty list means the
+    run is admissible.
+
+    Rules:
+      1. Every logical model key present in the document must have a model_map
+         entry.
+      2. Every model id referenced by model_map must be in the user's available
+         model set.
+      3. Every requested tool id must be in the user's available tool set.
+    """
+    errors = []
+    models = _available_model_ids(available_models)
+    tools = _available_tool_ids(available_tools)
+    logical = _document_logical_keys(document)
+    model_map = dict(model_map) if isinstance(model_map, dict) else {}
+    tool_ids = list(tool_ids) if tool_ids is not None else []
+
+    for key in sorted(logical):
+        if key not in model_map:
+            errors.append("model key %r (from document) has no model_map entry" % (key,))
+
+    for key in sorted(model_map):
+        mid_s = str(model_map[key]) if model_map[key] is not None else ""
+        if mid_s and mid_s not in models:
+            errors.append("model %r (for key %r) is not in the user's available models"
+                          % (mid_s, key))
+
+    for tid in sorted(set(str(t) for t in tool_ids)):
+        if tid and tid not in tools:
+            errors.append("tool %r is not in the user's available tools" % (tid,))
+
+    return errors
+
+
+# ---------------------------------------------------------------------------
+# Package validation (upload -> core boundary -> validated document)
+# ---------------------------------------------------------------------------
+def _normalize_cartridges(document):
+    """Normalize a validated document into a UI-ready cartridge list."""
+    out = []
+    for i, c in enumerate(document.get("cartridges", [])):
+        out.append({
+            "order": i + 1,
+            "id": c["id"],
+            "model": c.get("job_type", ""),
+            "prompt": c.get("prompt", ""),
+        })
+    return out
+
+def _load_package_from_upload(file_name, file_data_b64, file_type, document_json):
+    """Load & validate a package via the core boundary.
+
+    Returns (document, plan, name). Raises on validation failure.
+    """
+    m = _mag()
+    if not m.get("ok"):
+        raise ValueError(m.get("error", "magazine core not available"))
+    doc_mod = m["doc"]
+    # Separate requests must never overwrite one another's validation input.
+    with tempfile.TemporaryDirectory(prefix="magazine-upload-") as validate_dir:
+        if file_type == "json":
+            if not document_json:
+                raise ValueError("document_json is required for json type")
+            tmp = os.path.join(validate_dir, "magazine.json")
+            with open(tmp, "w", encoding="utf-8") as f:
+                f.write(document_json)
+        else:  # magazine
+            if not file_data_b64:
+                raise ValueError("file_data_b64 is required for magazine type")
+            try:
+                raw = base64.b64decode(file_data_b64)
+            except Exception:
+                raise ValueError("invalid base64 in file_data_b64")
+            tmp = os.path.join(validate_dir, "upload.magazine")
+            with open(tmp, "wb") as f:
+                f.write(raw)
+        loaded = doc_mod.load_document(tmp)
+    document = loaded.document
+    plan = loaded.plan
+    name = (plan.name if plan is not None else "") or "pasted-document"
+    return document, plan, name
+
+
+# ---------------------------------------------------------------------------
+# Read-only folder library. Only the canonical loader interprets the manifest.
+# ---------------------------------------------------------------------------
+class _LibraryError(ValueError):
+    def __init__(self, message, status_code=422):
+        super().__init__(message)
+        self.status_code = status_code
+
+
+def _initialize_library_root(root):
+    """Create a configured library without following any existing link.
+
+    Event installation calls this once so a clean Open WebUI data volume is
+    immediately usable. A later missing or replaced directory is still an
+    error; request handlers never recreate it implicitly.
+    """
+    if (not root or not os.path.isabs(root) or
+            os.mkdir not in os.supports_dir_fd or
+            os.open not in os.supports_dir_fd or
+            not hasattr(os, "O_NOFOLLOW")):
+        raise _LibraryError("Library unavailable: configure an absolute container directory with safe directory-create support.", 503)
+    library_path = Path(os.path.sep).joinpath(*Path(root).parts[1:])
+    runs_path = Path(_runs_root()).absolute()
+    if library_path.is_relative_to(runs_path) or runs_path.is_relative_to(library_path):
+        raise _LibraryError("Library unavailable: its directory must be separate from Magazine run storage.", 503)
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    fd = os.open(os.path.sep, flags)
+    try:
+        for part in Path(root).parts[1:]:
+            if part in (".", ".."):
+                raise _LibraryError("Library unavailable: invalid root configuration.", 503)
+            try:
+                next_fd = os.open(part, flags, dir_fd=fd)
+            except FileNotFoundError:
+                try:
+                    os.mkdir(part, mode=0o700, dir_fd=fd)
+                except FileExistsError:
+                    # A concurrent installer won the race; the no-follow open
+                    # below still verifies what was created.
+                    pass
+                next_fd = os.open(part, flags, dir_fd=fd)
+            os.close(fd)
+            fd = next_fd
+    except (OSError, _LibraryError):
+        raise _LibraryError("Library unavailable: its directory could not be created safely or contains a link.", 503) from None
+    finally:
+        os.close(fd)
+
+
+@contextlib.contextmanager
+def _library_root_fd(root):
+    """Anchor every read to open directories; reject links in root ancestors."""
+    fd = None
+    try:
+        if (not root or not os.path.isabs(root) or
+                os.open not in os.supports_dir_fd or
+                not hasattr(os, "O_NOFOLLOW")):
+            raise _LibraryError("Library unavailable: configure an absolute container directory with safe directory-read support.", 503)
+        library_path = Path(os.path.sep).joinpath(*Path(root).parts[1:])
+        runs_path = Path(_runs_root()).absolute()
+        if library_path.is_relative_to(runs_path) or runs_path.is_relative_to(library_path):
+            raise _LibraryError("Library unavailable: its directory must be separate from Magazine run storage.", 503)
+        flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+        fd = os.open(os.path.sep, flags)
+        for part in Path(root).parts[1:]:
+            if part in (".", ".."):
+                raise _LibraryError("Library unavailable: invalid root configuration.", 503)
+            next_fd = os.open(part, flags, dir_fd=fd)
+            os.close(fd)
+            fd = next_fd
+        yield fd
+    except OSError:
+        raise _LibraryError("Library unavailable: the configured directory is missing, inaccessible, or linked. Uploads remain available.", 503) from None
+    finally:
+        if fd is not None:
+            os.close(fd)
+
+
+def _library_copy_tree(source_fd, destination, budget, depth=0):
+    """Copy bounded regular files into our disposable snapshot, never follow links.
+
+    fds also defeat replacement between directory discovery and file reads.
+    A source changing during a read is refused, rather than partially accepted.
+    """
+    with os.scandir(source_fd) as entries:
+        for entry in entries:
+            budget["entries"] += 1
+            if budget["entries"] > _LIBRARY_MAX_ENTRIES:
+                raise _LibraryError("Workflow exceeds the directory-entry limit.")
+            before = os.stat(entry.name, dir_fd=source_fd, follow_symlinks=False)
+            target = destination / entry.name
+            if stat.S_ISLNK(before.st_mode):
+                raise _LibraryError("Workflow contains a symbolic link; links are not supported.")
+            if stat.S_ISDIR(before.st_mode):
+                if depth >= _LIBRARY_MAX_DEPTH:
+                    raise _LibraryError("Workflow exceeds the directory-depth limit.")
+                child_fd = os.open(entry.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=source_fd)
+                try:
+                    target.mkdir()
+                    _library_copy_tree(child_fd, target, budget, depth + 1)
+                finally:
+                    os.close(child_fd)
+            elif stat.S_ISREG(before.st_mode):
+                budget["files"] += 1
+                limit = _LIBRARY_MAX_FILE_BYTES
+                if depth == 0 and entry.name == "magazine.yaml":
+                    limit = min(limit, _LIBRARY_MAX_MANIFEST_BYTES)
+                if budget["files"] > _LIBRARY_MAX_FILES or before.st_size > limit:
+                    raise _LibraryError("Workflow exceeds the file-count or file-size limit.")
+                fd = os.open(entry.name, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW, dir_fd=source_fd)
+                with os.fdopen(fd, "rb") as file:
+                    opened = os.fstat(file.fileno())
+                    if not stat.S_ISREG(opened.st_mode) or (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino):
+                        raise _LibraryError("Workflow changed while being read; refresh and retry.")
+                    data = file.read(min(limit, _LIBRARY_MAX_TOTAL_BYTES - budget["bytes"]) + 1)
+                    after = os.fstat(file.fileno())
+                budget["bytes"] += len(data)
+                if len(data) > limit or budget["bytes"] > _LIBRARY_MAX_TOTAL_BYTES:
+                    raise _LibraryError("Workflow exceeds the file-size or total-byte limit.")
+                if (opened.st_size, opened.st_mtime_ns, opened.st_ctime_ns) != (after.st_size, after.st_mtime_ns, after.st_ctime_ns) or len(data) != after.st_size:
+                    raise _LibraryError("Workflow changed while being read; refresh and retry.")
+                target.write_bytes(data)
+            else:
+                raise _LibraryError("Workflow contains a non-regular file; only files and directories are supported.")
+
+
+def _library_validation_error(exc):
+    """Return fixed diagnostics, never raw paths, YAML excerpts, or tracebacks."""
+    if isinstance(exc, _LibraryError):
+        return str(exc)
+    if isinstance(exc, UnicodeError):
+        return "Invalid UTF-8 in the workflow manifest or prompt files."
+    if isinstance(exc, FileNotFoundError):
+        return "Missing magazine.yaml or a referenced prompt file."
+    if isinstance(exc, OSError):
+        if exc.errno in (errno.ELOOP, errno.ENOTDIR):
+            return "Workflow contains a link or an invalid directory."
+        return "Workflow files are inaccessible or changed while being read."
+    # The canonical exceptions include source paths or offending YAML values.
+    # Classify them; do not send their text to a browser.
+    detail = str(exc).lower()
+    if "invalid yaml" in detail:
+        return "Invalid YAML in magazine.yaml."
+    if "duplicate" in detail:
+        return "Duplicate cartridge identifiers or YAML keys."
+    if any(term in detail for term in ("path escapes", "absolute", "relative_path")):
+        return "Invalid prompt path; every prompt must remain inside its workflow."
+    return "Workflow failed canonical package schema validation."
+
+
+def _library_preview_at(root_fd, workflow_id):
+    summary = {"workflow_id": workflow_id, "name": workflow_id,
+               "valid": False, "cartridge_count": 0, "order": []}
+    source_fd = None
+    try:
+        source_fd = os.open(workflow_id, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=root_fd)
+        with tempfile.TemporaryDirectory(prefix="magazine-library-") as scratch:
+            _library_copy_tree(source_fd, Path(scratch), {"entries": 0, "files": 0, "bytes": 0})
+            core = _mag()
+            if not core.get("ok"):
+                raise _LibraryError("Workflow validation is temporarily unavailable.")
+            loaded = core["doc"].load_document(scratch)
+        document = loaded.document
+        cartridges = _normalize_cartridges(document)
+        summary.update(valid=True, name=loaded.plan.name, schema_version=document["schema_version"],
+                       cartridge_count=len(cartridges), order=[c["id"] for c in cartridges],
+                       cartridges=cartridges, document=document)
+    except Exception as exc:
+        summary["error"] = _library_validation_error(exc)
+    finally:
+        if source_fd is not None:
+            os.close(source_fd)
+    return summary
+
+
+def _library_preview(root, workflow_id):
+    if not isinstance(workflow_id, str) or not _LIBRARY_ID.fullmatch(workflow_id):
+        raise _LibraryError("Invalid workflow identifier; select a listed workflow.", 400)
+    with _library_root_fd(root) as root_fd:
+        return _library_preview_at(root_fd, workflow_id)
+
+
+def _library_list(root):
+    result = {"available": False, "workflows": [], "truncated": False, "message": ""}
+    try:
+        with _library_root_fd(root) as root_fd:
+            names = []
+            with os.scandir(root_fd) as entries:
+                for count, entry in enumerate(entries, 1):
+                    if count > _LIBRARY_MAX_ROOT_ENTRIES:
+                        result["truncated"] = True
+                        break
+                    if _LIBRARY_ID.fullmatch(entry.name) and (entry.is_dir(follow_symlinks=False) or entry.is_symlink()):
+                        names.append(entry.name)
+            names.sort()
+            if len(names) > _LIBRARY_MAX_WORKFLOWS:
+                result["truncated"] = True
+            for name in names[:_LIBRARY_MAX_WORKFLOWS]:
+                preview = _library_preview_at(root_fd, name)
+                result["workflows"].append({key: value for key, value in preview.items()
+                                            if key not in ("document", "cartridges")})
+        result["available"] = True
+        result["message"] = ("Library scan limit reached; only a bounded selection is shown."
+                             if result["truncated"] else
+                             ("No Magazine projects yet. An administrator can import a Project ZIP."
+                              if not result["workflows"] else "Select a project to validate and preview its prompts."))
+    except _LibraryError as exc:
+        result["message"] = str(exc)
+    return result
+
+
+def _library_zip_members(archive):
+    """Validate the whole ZIP directory before extraction; no new manifest parser."""
+    infos = archive.infolist()
+    if not infos or len(infos) > _LIBRARY_MAX_ENTRIES:
+        raise _LibraryError("ZIP is empty or exceeds the archive-entry limit.", 413)
+    core = _mag()
+    if not core.get("ok"):
+        raise _LibraryError("Project validation is temporarily unavailable.", 503)
+    members, explicit, paths = [], set(), {}
+    files, total = 0, 0
+    for info in infos:
+        # Reuse the frozen package's archive checks, then add import limits
+        # and collision checks before anything is materialized.
+        try:
+            core["doc"].package._validate_member_info(info)
+        except Exception:
+            raise _LibraryError("ZIP contains an unsafe archive path or entry.", 400) from None
+        name = info.filename
+        file_type = stat.S_IFMT(info.external_attr >> 16)
+        directory = info.is_dir()
+        if (file_type not in (0, stat.S_IFREG, stat.S_IFDIR) or
+                (file_type == stat.S_IFDIR and not directory) or
+                (file_type == stat.S_IFREG and directory) or
+                (info.create_system == 0 and info.external_attr & 0x400) or
+                info.flag_bits & 1 or
+                info.compress_type not in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED)):
+            raise _LibraryError("ZIP contains an unsupported or unsafe archive entry.", 400)
+        if (name != info.orig_filename or "\\" in name or
+                PureWindowsPath(name).drive or name.startswith("/") or
+                len(name.encode("utf-8")) > _LIBRARY_MAX_PATH_BYTES):
+            raise _LibraryError("ZIP contains an invalid path or exceeds the path-length limit.", 400)
+        parts = name.rstrip("/").split("/")
+        if len(parts) > _LIBRARY_MAX_DEPTH + 1:
+            raise _LibraryError("ZIP exceeds the directory-depth limit.", 413)
+        for part in parts:
+            reserved = part.split(".", 1)[0].upper()
+            if (not part or part in (".", "..") or part.rstrip(" .") != part or
+                    any(ord(c) < 32 or ord(c) == 127 or c in '<>:"|?*' for c in part) or
+                    reserved in {"CON", "PRN", "AUX", "NUL"} or
+                    re.fullmatch(r"(?:COM|LPT)[1-9]", reserved)):
+                raise _LibraryError("ZIP contains an unsafe or ambiguous path.", 400)
+        key = unicodedata.normalize("NFC", "/".join(parts)).casefold()
+        if key in explicit:
+            raise _LibraryError("ZIP contains duplicate or case-colliding paths.", 400)
+        explicit.add(key)
+        for index in range(1, len(parts) + 1):
+            path = "/".join(parts[:index])
+            folded = unicodedata.normalize("NFC", path).casefold()
+            kind = "directory" if index < len(parts) or directory else "file"
+            if folded in paths and paths[folded] != (path, kind):
+                raise _LibraryError("ZIP contains case-colliding paths or a file/directory conflict.", 400)
+            paths[folded] = (path, kind)
+        if len(paths) > _LIBRARY_MAX_ENTRIES:
+            raise _LibraryError("ZIP exceeds the expanded directory-entry limit.", 413)
+        if not directory:
+            files += 1
+            total += info.file_size
+            limit = (_LIBRARY_MAX_MANIFEST_BYTES if parts[-1] == "magazine.yaml"
+                     else _LIBRARY_MAX_FILE_BYTES)
+            if files > _LIBRARY_MAX_FILES or info.file_size > limit or total > _LIBRARY_MAX_TOTAL_BYTES:
+                raise _LibraryError("ZIP exceeds file-count, file-size or expanded-content limits.", 413)
+            if info.file_size > 128 * 1024 and info.file_size > max(1, info.compress_size) * _LIBRARY_MAX_EXPANSION_RATIO:
+                raise _LibraryError("ZIP exceeds the permitted expansion ratio.", 413)
+        elif info.file_size:
+            raise _LibraryError("ZIP directory entry contains unexpected content.", 400)
+        members.append((info, parts, directory))
+    if any(parts == ["magazine.yaml"] and not directory for _, parts, directory in members):
+        return members
+    first_parts = {parts[0] for _, parts, _ in members}
+    if len(first_parts) == 1:
+        wrapper = next(iter(first_parts))
+        if any(parts == [wrapper, "magazine.yaml"] and not directory for _, parts, directory in members):
+            return [(info, parts[1:], directory) for info, parts, directory in members if len(parts) > 1]
+    raise _LibraryError("ZIP must contain magazine.yaml at its root or inside one enclosing project folder.", 400)
+
+
+def _library_extract_zip(archive, members, staging_fd):
+    """Stream checked regular files into a private, newly created staging tree."""
+    total = 0
+    for info, parts, directory in members:
+        parent = os.dup(staging_fd)
+        try:
+            for part in (parts if directory else parts[:-1]):
+                try:
+                    os.mkdir(part, mode=0o700, dir_fd=parent)
+                except FileExistsError:
+                    pass
+                child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+                os.close(parent)
+                parent = child
+            if directory:
+                continue
+            fd = os.open(parts[-1], os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=parent)
+            size = 0
+            with os.fdopen(fd, "wb") as target, archive.open(info) as source:
+                while True:
+                    chunk = source.read(65536)
+                    if not chunk:
+                        break
+                    size += len(chunk)
+                    total += len(chunk)
+                    if size > info.file_size or size > _LIBRARY_MAX_FILE_BYTES or total > _LIBRARY_MAX_TOTAL_BYTES:
+                        raise _LibraryError("ZIP exceeds expanded-content limits.", 413)
+                    target.write(chunk)
+                if size != info.file_size:
+                    raise _LibraryError("ZIP content length does not match its directory.", 400)
+                target.flush()
+                os.fsync(target.fileno())
+        finally:
+            os.close(parent)
+
+
+def _library_sync_directories(fd):
+    with os.scandir(fd) as entries:
+        for entry in entries:
+            if entry.is_dir(follow_symlinks=False):
+                child = os.open(entry.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+                try:
+                    _library_sync_directories(child)
+                finally:
+                    os.close(child)
+    os.fsync(fd)
+
+
+@contextlib.contextmanager
+def _library_import_lock(root_fd):
+    # Lock the directory inode: no persistent lock file or new shared database.
+    import fcntl
+    deadline = time.monotonic() + _LIBRARY_IMPORT_LOCK_SECONDS
+    while True:
+        try:
+            fcntl.flock(root_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            break
+        except BlockingIOError:
+            if time.monotonic() >= deadline:
+                raise _LibraryError("Another project import is in progress; refresh and retry.", 409) from None
+            time.sleep(0.05)
+    try:
+        yield
+    finally:
+        fcntl.flock(root_fd, fcntl.LOCK_UN)
+
+
+def _library_publish(root_fd, staging, project_id):
+    """Atomic directory publication that cannot overwrite even an empty target."""
+    rename = getattr(ctypes.CDLL(None, use_errno=True), "renameat2", None)
+    if rename is None:
+        raise _LibraryError("Atomic no-overwrite project publication is unavailable on this runtime.", 503)
+    rename.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+    rename.restype = ctypes.c_int
+    if rename(root_fd, os.fsencode(staging), root_fd, os.fsencode(project_id), 1) != 0:  # RENAME_NOREPLACE
+        error = ctypes.get_errno()
+        if error in (errno.EEXIST, errno.ENOTEMPTY):
+            raise _LibraryError("A project with that identifier already exists.", 409)
+        raise _LibraryError("Atomic project publication failed or is unsupported; existing projects were preserved.", 503)
+
+
+def _library_check_conflict(root_fd, project_id, name):
+    names = []
+    with os.scandir(root_fd) as entries:
+        for count, entry in enumerate(entries, 1):
+            if count > _LIBRARY_MAX_ROOT_ENTRIES:
+                raise _LibraryError("Project library scan limit reached; import is unavailable.", 413)
+            if entry.name.casefold() == project_id.casefold():
+                raise _LibraryError("A project with that identifier already exists.", 409)
+            if _LIBRARY_ID.fullmatch(entry.name):
+                names.append(entry.name)
+    if len(names) >= _LIBRARY_MAX_WORKFLOWS:
+        raise _LibraryError("Project library capacity limit reached.", 413)
+    folded_name = unicodedata.normalize("NFC", name.strip()).casefold()
+    for identifier in names:
+        preview = _library_preview_at(root_fd, identifier)
+        if preview["valid"] and unicodedata.normalize("NFC", preview["name"].strip()).casefold() == folded_name:
+            raise _LibraryError("A project with that workflow name already exists.", 409)
+
+
+def _library_cleanup_stage(root_fd, staging, identity):
+    current = os.stat(staging, dir_fd=root_fd, follow_symlinks=False)
+    if not stat.S_ISDIR(current.st_mode) or (current.st_dev, current.st_ino) != identity:
+        raise _LibraryError("Import staging identity changed; administrator review is required.", 500)
+    shutil.rmtree(staging, dir_fd=root_fd)
+
+
+def _library_import(root, file_name, file_data_b64, project_id=""):
+    if not file_name.lower().endswith(".zip"):
+        raise _LibraryError("Select a Project ZIP file.", 400)
+    if not project_id:
+        project_id = re.sub(r"[^A-Za-z0-9_-]+", "-", file_name[:-4]).strip("-_")[:64] or "Project"
+    if not _LIBRARY_ID.fullmatch(project_id):
+        raise _LibraryError("Invalid project identifier; use letters, digits, hyphens or underscores.", 400)
+    if len(file_data_b64) > ((_LIBRARY_MAX_ARCHIVE_BYTES + 2) // 3) * 4:
+        raise _LibraryError("ZIP exceeds the compressed upload limit.", 413)
+    try:
+        raw = base64.b64decode(file_data_b64, validate=True)
+    except (ValueError, TypeError):
+        raise _LibraryError("Invalid base64 Project ZIP upload.", 400) from None
+    if len(raw) > _LIBRARY_MAX_ARCHIVE_BYTES:
+        raise _LibraryError("ZIP exceeds the compressed upload limit.", 413)
+    if not getattr(shutil.rmtree, "avoids_symlink_attacks", False):
+        raise _LibraryError("Safe project staging cleanup is unavailable on this runtime.", 503)
+    with _library_root_fd(root) as root_fd:
+        staging, identity, created, published = None, None, False, False
+        try:
+            with _library_import_lock(root_fd), zipfile.ZipFile(io.BytesIO(raw)) as archive:
+                members = _library_zip_members(archive)
+                staging = ".import-" + uuid.uuid4().hex
+                os.mkdir(staging, mode=0o700, dir_fd=root_fd)
+                created = True
+                st = os.stat(staging, dir_fd=root_fd, follow_symlinks=False)
+                identity = (st.st_dev, st.st_ino)
+                stage_fd = os.open(staging, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=root_fd)
+                try:
+                    _library_extract_zip(archive, members, stage_fd)
+                    _library_sync_directories(stage_fd)
+                finally:
+                    os.close(stage_fd)
+                preview = _library_preview_at(root_fd, staging)
+                if not preview["valid"]:
+                    raise _LibraryError(preview["error"], 400)
+                _library_check_conflict(root_fd, project_id, preview["name"])
+                _library_publish(root_fd, staging, project_id)
+                published = True
+                try:
+                    os.fsync(root_fd)
+                except OSError:
+                    raise _LibraryError("Project was published, but directory synchronization failed. Refresh projects before retrying; administrator review is required.", 503) from None
+                retained = _retain_input_zip(project_id, raw, root)
+                return {"imported": True, "project_id": project_id, "name": preview["name"],
+                        "cartridge_count": preview["cartridge_count"], "order": preview["order"],
+                        "input_zip": retained,
+                        "message": ("Project imported. " + retained["message"] +
+                                    " Select it to preview and assign models; no run was started.")}
+        except _LibraryError:
+            raise
+        except (zipfile.BadZipFile, zlib.error, EOFError, RuntimeError, NotImplementedError, ValueError):
+            raise _LibraryError("Invalid or unsupported Project ZIP archive.", 400) from None
+        except (OSError, ImportError):
+            raise _LibraryError("Project import could not write, synchronize or publish its staging files. Check library permissions and runtime support.", 503) from None
+        finally:
+            if created and not published:
+                try:
+                    if identity is None:
+                        raise _LibraryError("Staging identity could not be confirmed.", 500)
+                    _library_cleanup_stage(root_fd, staging, identity)
+                except Exception:
+                    raise _LibraryError("Failed-import staging cleanup could not be confirmed for temporary import " + staging + "; administrator review is required.", 500) from None
+
+
+# ---------------------------------------------------------------------------
+# Dedicated deliverable storage (independent of canonical execution state)
+# ---------------------------------------------------------------------------
+def _storage_root(kind):
+    variable, directory = {
+        "input": ("MAGAZINE_INPUT_ZIPS_DIR", "input-zips"),
+        "finished": ("MAGAZINE_FINISHED_WORK_DIR", "finished-work"),
+    }[kind]
+    return os.environ.get(variable, str(Path(_runs_root()).parent / directory))
+
+
+def _storage_token(label):
+    """Readable, bounded, Windows-safe component with a 128-bit identity hash."""
+    label = str(label)
+    slug = re.sub(r"[^A-Za-z0-9_-]+", "-", label).strip("-_")[:16] or "item"
+    return "m-" + slug + "--" + hashlib.sha256(label.encode("utf-8")).hexdigest()[:32]
+
+
+@contextlib.contextmanager
+def _storage_fd(kind, library_root=None):
+    root = _storage_root(kind)
+    # Keep deliverables separate from canonical runs, the shared library, and
+    # each other. Ancestor checks and no-follow FD walks also reject root links.
+    path = Path(root)
+    other = Path(_storage_root("finished" if kind == "input" else "input"))
+    library = Path(library_root or _STORAGE_LIBRARY_ROOT_GETTER())
+    if not path.is_absolute() or ".." in path.parts:
+        raise _LibraryError("Storage root must be an absolute container path without '..'.", 503)
+    for protected in (other, library):
+        if path.is_relative_to(protected) or protected.is_relative_to(path):
+            raise _LibraryError("Dedicated storage roots must not overlap each other or the library.", 503)
+    _initialize_library_root(str(path))
+    with _library_root_fd(str(path)) as fd:
+        yield fd
+
+
+def _storage_write(fd, name, data):
+    """Only new regular files inside an unpublished directory or unique temp."""
+    handle = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                     0o600, dir_fd=fd)
+    with os.fdopen(handle, "wb") as stream:
+        stream.write(data)
+        stream.flush()
+        os.fsync(stream.fileno())
+
+
+_STORAGE_LIBRARY_ROOT_GETTER = lambda: _LIBRARY_ROOT_DEFAULT
+
+
+def _retain_input_zip(project_id, raw, library_root=None):
+    name = _storage_token(project_id) + "--" + uuid.uuid4().hex + ".zip"
+    temporary = ".zip-" + uuid.uuid4().hex
+    try:
+        with _storage_fd("input", library_root) as fd:
+            try:
+                _storage_write(fd, temporary, raw)
+                # Hard-link publication is atomic and refuses ANY existing name.
+                os.link(temporary, name, src_dir_fd=fd, dst_dir_fd=fd, follow_symlinks=False)
+                os.unlink(temporary, dir_fd=fd)
+                os.fsync(fd)
+            finally:
+                try:
+                    os.unlink(temporary, dir_fd=fd)
+                except FileNotFoundError:
+                    pass
+        return {"retained": True, "file": name, "sha256": hashlib.sha256(raw).hexdigest(),
+                "message": "Original ZIP retained in Input ZIPs."}
+    except Exception as error:
+        # Import has already committed. Never encourage a conflicting re-import
+        # or label a write/fsync failure as successful retention.
+        print("[magazine] project imported but original ZIP retention failed (%s, errno=%s); keep original upload" % (type(error).__name__, getattr(error, "errno", None)), file=sys.stderr, flush=True)
+        return {"retained": False,
+                "message": "WARNING: project imported, but original ZIP retention could not be confirmed. Keep your original ZIP; check storage permissions and server logs. Do not re-import this project."}
+
+
+def _export_record(owner_id, rid):
+    try:
+        with open(os.path.join(_run_base(owner_id, rid), "export.json"), encoding="utf-8") as stream:
+            return json.load(stream)
+    except (OSError, ValueError):
+        return None
+
+
+def _save_export_record(owner_id, rid, record):
+    from magazine.durability import atomic_write
+    atomic_write(os.path.join(_run_base(owner_id, rid), "export.json"),
+                 (json.dumps(record, sort_keys=True) + "\n").encode("utf-8"))
+
+
+def _canonical_result_bytes(owner_id, rid, cid):
+    path = Path(_mag()["rs"].result_path(_state_dir(owner_id, rid), cid))
+    fd = os.open(os.path.sep, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        for part in path.parts[1:-1]:
+            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            os.close(fd)
+            fd = child
+        handle = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=fd)
+        with os.fdopen(handle, "rb") as stream:
+            info = os.fstat(stream.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                raise _LibraryError("Canonical result must be a regular file without hard links.", 503)
+            return stream.read()
+    finally:
+        os.close(fd)
+
+
+def _export_files(owner_id, rid):
+    # Validate identifiers BEFORE consulting the existing run path helpers.
+    if not _LIBRARY_ID.fullmatch(str(rid)) or not _LIBRARY_ID.fullmatch(str(owner_id)):
+        raise _LibraryError("Run not found.", 404)
+    payload = _results_payload(owner_id, rid)
+    if payload is None:
+        raise _LibraryError("Run not found.", 404)
+    if payload.get("status") not in ("COMPLETED", "HALTED"):
+        raise _LibraryError("Only COMPLETED or HALTED runs can be exported; saved results remain available.", 409)
+    meta = _load_meta(owner_id, rid)
+    files, cartridges = {}, []
+    for index, cid in enumerate(payload["done"], 1):
+        if payload["results"].get(cid) is None:
+            raise _LibraryError("A completed cartridge's canonical result is missing or unreadable; export refused.", 503)
+        # Reuse the canonical result-store naming and preserve UTF-8 bytes,
+        # including CRLF: the UI's text reader normalizes line endings.
+        data = _canonical_result_bytes(owner_id, rid, cid)
+        data.decode("utf-8")
+        name = "%04d-%s.txt" % (index, _storage_token(cid))
+        files[name] = data
+        cartridges.append({"id": cid, "file": name, "bytes": len(data),
+                           "sha256": hashlib.sha256(data).hexdigest()})
+    # A concurrent recovery may change HALTED into READY/RUNNING. Refuse a
+    # changing snapshot; never acquire or change the engine's execution claim.
+    after = _results_payload(owner_id, rid)
+    if after is None or any(after.get(k) != payload.get(k) for k in ("status", "revision", "done", "results")):
+        raise _LibraryError("Run changed during export; retry after it has stopped.", 409)
+    project = str(meta.get("name") or "Workflow")
+    manifest = {"schema_version": "1.0", "run_id": rid, "owner_id": owner_id,
+                "project_name": project, "project_id": meta.get("project_id"), "status": payload["status"],
+                "revision": payload["revision"], "created_at": meta.get("created_at"),
+                "cartridges": cartridges,
+                "scope": "Canonical saved cartridge text only; no external tool files or reconstructed chats."}
+    files["manifest.json"] = (json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    buffer = io.BytesIO()
+    # ZIP_STORED avoids version-dependent compression and streams exact bytes.
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_STORED) as archive:
+        for name, data in sorted(files.items()):
+            entry = zipfile.ZipInfo(name, (2026, 1, 1, 0, 0, 0))
+            entry.external_attr = 0o100600 << 16
+            archive.writestr(entry, data)
+    files["results.zip"] = buffer.getvalue()
+    parts = ["owner-" + hashlib.sha256(owner_id.encode("utf-8")).hexdigest()[:32],
+             _storage_token(meta.get("project_id") or project), "run-" + rid,
+             "snapshot-%s-%s" % (payload["revision"], payload["status"].lower())]
+    return files, manifest, parts
+
+
+def _storage_child(fd, name):
+    try:
+        os.mkdir(name, mode=0o700, dir_fd=fd)
+        os.fsync(fd)
+    except FileExistsError:
+        pass
+    return os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+
+
+def _export_matches(fd, name, files):
+    child = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+    try:
+        if set(os.listdir(child)) != set(files):
+            return False
+        for filename, data in files.items():
+            handle = os.open(filename, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=child)
+            with os.fdopen(handle, "rb") as stream:
+                info = os.fstat(stream.fileno())
+                if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_size != len(data):
+                    return False
+                if stream.read() != data:
+                    return False
+        return True
+    finally:
+        os.close(child)
+
+
+def _storage_publish_snapshot(fd, staging, name, files, identity):
+    try:
+        _library_publish(fd, staging, name)
+        return
+    except _LibraryError as error:
+        # Docker Desktop NTFS mounts return EINVAL for RENAME_NOREPLACE even
+        # though exclusive mkdir, no-replace hard links, locks/fsync work.
+        # Never fall back for conflicts or ordinary permission/I/O failures.
+        unsupported = ctypes.get_errno() in (errno.EINVAL, errno.ENOSYS, errno.EOPNOTSUPP)
+        if error.status_code != 503 or not (unsupported or "unavailable on this runtime" in str(error)):
+            raise
+    try:
+        os.mkdir(name, mode=0o700, dir_fd=fd)
+    except FileExistsError:
+        raise _LibraryError("Export destination already exists; nothing was overwritten.", 409) from None
+    info = os.stat(name, dir_fd=fd, follow_symlinks=False)
+    target_identity = (info.st_dev, info.st_ino)
+    source = target = None
+    try:
+        source = os.open(staging, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+        target = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+        # All source files were fully synchronized before publication. Each
+        # link is an atomic no-overwrite publication; manifest is the LAST
+        # completion marker. No fallback rename can replace a user's directory.
+        for filename in sorted(n for n in files if n != "manifest.json") + ["manifest.json"]:
+            os.link(filename, filename, src_dir_fd=source, dst_dir_fd=target, follow_symlinks=False)
+        os.fsync(target)
+        _library_cleanup_stage(fd, staging, identity)
+    except Exception:
+        _library_cleanup_stage(fd, name, target_identity)
+        raise
+    finally:
+        if source is not None:
+            os.close(source)
+        if target is not None:
+            os.close(target)
+
+
+def _export_run(owner_id, rid):
+    """Publish a complete, repeatable terminal snapshot; never replace work."""
+    files, manifest, parts = _export_files(owner_id, rid)
+    with _storage_fd("finished") as root_fd:
+        fd = os.dup(root_fd)
+        staging, identity = None, None
+        try:
+            for part in parts[:-1]:
+                next_fd = _storage_child(fd, part)
+                os.close(fd)
+                fd = next_fd
+            with _library_import_lock(fd):
+                try:
+                    exists = os.stat(parts[-1], dir_fd=fd, follow_symlinks=False)
+                except FileNotFoundError:
+                    exists = None
+                if exists is not None:
+                    if not _export_matches(fd, parts[-1], files):
+                        raise _LibraryError("Export destination already contains different work; nothing was overwritten.", 409)
+                    os.fsync(fd)
+                else:
+                    staging = ".export-" + uuid.uuid4().hex
+                    os.mkdir(staging, mode=0o700, dir_fd=fd)
+                    info = os.stat(staging, dir_fd=fd, follow_symlinks=False)
+                    identity = (info.st_dev, info.st_ino)
+                    child = os.open(staging, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+                    try:
+                        for filename, data in files.items():
+                            _storage_write(child, filename, data)
+                        os.fsync(child)
+                    finally:
+                        os.close(child)
+                    _storage_publish_snapshot(fd, staging, parts[-1], files, identity)
+                    staging = None
+                    os.fsync(fd)
+        finally:
+            try:
+                if staging is not None and identity is not None:
+                    _library_cleanup_stage(fd, staging, identity)
+            finally:
+                os.close(fd)
+    record = {"status": "EXPORTED", "run_status": manifest["status"],
+              "revision": manifest["revision"], "directory": "/".join(parts),
+              "zip": "/".join(parts + ["results.zip"]),
+              "cartridge_count": len(manifest["cartridges"])}
+    _save_export_record(owner_id, rid, record)
+    return record
+
+
+def _attempt_export(owner_id, rid):
+    try:
+        return _export_run(owner_id, rid)
+    except Exception as error:
+        record = {"status": "FAILED", "message": "Finished Work export failed. Canonical results and execution status are unchanged; check configured storage permissions, paths and free space, then retry POST /api/magazine/runs/" + rid + "/export."}
+        # Only authenticated/known owner runs may receive a sidecar. Never
+        # persist an authorization error or an unsafe request identifier.
+        if (_LIBRARY_ID.fullmatch(str(owner_id)) and _LIBRARY_ID.fullmatch(str(rid))
+                and _load_meta(owner_id, rid).get("owner_id") == owner_id):
+            try:
+                _save_export_record(owner_id, rid, record)
+            except Exception:
+                pass
+        print("[magazine] export failed for run %s (%s); canonical results unchanged" % (rid, type(error).__name__), file=sys.stderr, flush=True)
+        return record
+
+
+async def _auto_export_completed(owner_id, rid):
+    # Export I/O cannot change execution success or the runner's exception path.
+    try:
+        payload = _status_payload(owner_id, rid)
+        if payload and payload.get("status") == "COMPLETED":
+            await asyncio.to_thread(_attempt_export, owner_id, rid)
+    except Exception:
+        print("[magazine] automatic export could not be checked; canonical state unchanged", file=sys.stderr, flush=True)
+
+
+# ---------------------------------------------------------------------------
+# Run lifecycle helpers
+# ---------------------------------------------------------------------------
+def _status_payload(owner_id, rid):
+    m = _mag()
+    if not m.get("ok"):
+        return {"run_id": rid, "status": "error", "error": m.get("error", "")}
+    ss = m["ss"]
+    sp = _state_path(owner_id, rid)
+    if not os.path.exists(sp):
+        return None  # no such run for this owner -> 404
+    try:
+        state = ss.load_run_state(sp)
+    except Exception as e:
+        return {"run_id": rid, "status": "error", "error": repr(e),
+                "exists": os.path.exists(sp)}
+    meta = _load_meta(owner_id, rid)
+    if not meta or meta.get("owner_id") != owner_id:
+        return None  # not owned by the caller -> 404
+    # Optional execution block: read the run's execution-ownership claim if
+    # present.  Read-only, no lock, no side effects.  When the claim file is
+    # absent (a run with no claim yet), the block is null.  owner_alive
+    # compares the claim's runtime_id against this process's own runtime_id
+    # (a plain string equality, per the design: it *surfaces* FM-2 without
+    # acting on it).
+    execution = None
+    try:
+        claim = m["em"].load_execution_metadata(
+            os.path.join(os.path.dirname(sp), "execution.json"))
+        if claim is not None:
+            cur = m["ri"].get_runtime_identity().runtime_id
+            execution = {
+                "attempt": claim.attempt,
+                "runtime_id": claim.runtime_id,
+                "owner_alive": claim.runtime_id == cur,
+                "halted": claim.halted_by is not None,
+                "halt_reason": claim.halt_reason,
+            }
+    except Exception:
+        execution = None
+    control = None
+    try:
+        control = m["rc"].load_stop_control(sp)
+    except Exception as exc:
+        control = {"error": repr(exc)}
+    return {
+        "run_id": rid,
+        "status": state["status"],
+        "current_cartridge": state.get("current"),
+        "done": state.get("done", []),
+        "todo": state.get("todo", []),
+        "revision": state.get("revision", 0),
+        "model_map": meta.get("model_map"),
+        "tool_ids": meta.get("tool_ids"),
+        "owner_id": meta.get("owner_id"),
+        "created_at": meta.get("created_at"),
+        "execution": execution,
+        "control": control,
+    }
+
+def _load_state(owner_id, rid):
+    m = _mag()
+    if not m.get("ok"):
+        raise ValueError(m.get("error", ""))
+    sp = _state_path(owner_id, rid)
+    if not os.path.exists(sp):
+        raise KeyError("run not found")
+    return m["ss"].load_run_state(sp)
+
+def _results_payload(owner_id, rid):
+    """Owner-scoped native result data for a run.
+
+    Reads the existing run state (magazine.state_store) and the per-cartridge
+    durable result files (magazine.result_store, ``<run_dir>/results/<token>.txt``).
+    No second result format is created: the ``results`` map is keyed by the
+    completed cartridge IDs from the run state and each value is the verbatim
+    text of that cartridge's canonical result file.  Returns ``None`` when the
+    run does not exist for the caller or is not owned by the caller (HTTP 404).
+    """
+    m = _mag()
+    if not m.get("ok"):
+        return {"run_id": rid, "status": "error", "error": m.get("error", "")}
+    ss = m["ss"]
+    rs = m["rs"]
+    sp = _state_path(owner_id, rid)
+    if not os.path.exists(sp):
+        return None  # no such run for this owner -> 404
+    try:
+        state = ss.load_run_state(sp)
+    except Exception as e:
+        return {"run_id": rid, "status": "error", "error": repr(e),
+                "exists": os.path.exists(sp)}
+    meta = _load_meta(owner_id, rid)
+    if not meta or meta.get("owner_id") != owner_id:
+        return None  # not owned by the caller -> 404
+    run_dir = os.path.dirname(sp)
+    results = {}
+    for cid in state.get("done", []):
+        p = rs.result_path(run_dir, cid)
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                text = f.read()
+        except FileNotFoundError:
+            text = None
+        except Exception:
+            text = None
+        results[cid] = text
+    return {
+        "run_id": rid,
+        "status": state["status"],
+        "done": state.get("done", []),
+        "revision": state.get("revision", 0),
+        "model_map": meta.get("model_map"),
+        "owner_id": meta.get("owner_id"),
+        "created_at": meta.get("created_at"),
+        "results": results,
+    }
+
+
+def _start_precheck(payload, api_key):
+    """Pure, side-effect-free decision for the /start route.
+
+    Returns `` (ok, status_code, detail) ``.  Gates are ordered ownership
+    -> auth -> state: a missing or unowned run yields 404 before any state is
+    disclosed; a missing/empty usable bearer token yields 401; only then is the
+    run status checked and a non-READY run yields 409.
+    """
+    if payload is None:
+        return False, 404, "run not found"
+    if not api_key:
+        return False, 401, "no usable bearer token"
+    if payload["status"] != "READY":
+        return False, 409, "cannot start a %s run" % payload["status"]
+    return True, 202, "run is READY and owned by the caller"
+
+
+# --- Slice 4 decision helpers (testable without the FastAPI/HTTP stack) -----
+# The /start and /recover routes delegate to these.  They own all of the
+# lost-runtime interception and recovery logic so the routes stay thin and the
+# behaviour can be exercised directly (the runner test suite has no FastAPI).
+
+
+def _lost_runtime_interception(payload, owner_id, rid):
+    """Slice 4: prove ownership of a RUNNING run before the /start precheck.
+
+    Returns ``None`` when the run is not RUNNING (no interception; the normal
+    precheck decides).  Returns the string ``"same_runtime"`` when this process
+    owns the run (the normal precheck then rejects the double-start with 409).
+    Returns a dict ``{status_code, status, detail, [execution]}`` when the run
+    is auto-halted (lost-owner) or cannot be started because the recorded
+    owner is still live/ambiguous or for a lock / TOCTOU reason
+    (``owner_live`` / ``locked`` / ``state_changed`` / ``claim_changed``).
+    """
+    if payload is None or payload.get("status") != "RUNNING":
+        return None
+    m = _mag()
+    identity = m["ri"].get_runtime_identity()
+    outcome = m["racton"].recover_lost_runtime(
+        _state_path(owner_id, rid),
+        _lock_path(owner_id, rid),
+        owner_id,
+        identity.runtime_id, identity.pid, identity.start_ticks,
+        expected_status="RUNNING",
+    )
+    if outcome.outcome == "halted":
+        refreshed = _status_payload(owner_id, rid)
+        return {
+            "status_code": 409,
+            "status": "HALTED",
+            "detail": "auto-halted (lost runtime); recover to READY first",
+            "execution": (refreshed or {}).get("execution"),
+        }
+    if outcome.outcome == "no_claim":
+        return {
+            "status_code": 409,
+            "status": "RUNNING",
+            "detail": ("legacy RUNNING run -- no ownership evidence; "
+                        "recover manually"),
+        }
+    if outcome.outcome == "same_runtime":
+        return "same_runtime"
+    if outcome.outcome == "owner_live":
+        return {
+            "status_code": 409,
+            "status": "RUNNING",
+            "detail": ("cannot start: recorded execution owner is still "
+                       "alive or its liveness is ambiguous"),
+        }
+    # "locked" / "state_changed" / "claim_changed".
+    return {
+        "status_code": 409,
+        "status": (outcome.state or payload).get("status"),
+        "detail": f"cannot start: lock not owned ({outcome.outcome})",
+    }
+
+
+def _recover_run_decision(owner_id, rid):
+    """Slice 4: operator-recovery decision for the /recover route.
+
+    Returns ``(status_code, body)``.  HALTED -> READY recovery and retirement
+    of a positively extinct owner's READY claim both return 200 without
+    starting execution.  Missing/unowned runs return 404; ineligible or
+    conflicting runs return 409; persistence failures return 500.
+    """
+    payload = _status_payload(owner_id, rid)
+    if payload is None:
+        return 404, {"detail": "Run not found"}
+    if (payload.get("control") or {}).get("request") == "STOP":
+        return 409, {
+            "detail": "Run has a durable Stop request and cannot be recovered",
+            "status": payload.get("status"),
+            "control": payload.get("control"),
+        }
+    status = payload.get("status")
+    if status not in ("HALTED", "READY"):
+        return 409, {"detail": "Run is %s, not HALTED" % payload["status"]}
+    state_path = _state_path(owner_id, rid)
+    lock_path = _lock_path(owner_id, rid)
+    m = _mag()
+    identity = m["ri"].get_runtime_identity()
+    try:
+        if status == "HALTED":
+            m["racton"].persist_recover_halted(
+                state_path, lock_path, owner_id,
+                identity.runtime_id, identity.pid, identity.start_ticks,
+            )
+        else:
+            outcome = m["racton"].recover_lost_runtime(
+                state_path, lock_path, owner_id,
+                identity.runtime_id, identity.pid, identity.start_ticks,
+                expected_status="READY",
+            )
+            if outcome.outcome == "no_claim":
+                return 409, {"detail": "Run is READY, not HALTED"}
+            if outcome.outcome != "ready_recovered":
+                return 409, {"detail": "READY recovery refused: %s" % outcome.outcome}
+    except Exception as e:
+        return 500, {"detail": "recovery failed: %r" % e}
+    # Re-fetch: the run is READY now.
+    return 200, _status_payload(owner_id, rid)
+
+
+async def _debug_note(user, title, data):
+    """Append an OWUI debug note (owner-scoped) for the current user."""
+    try:
+        from open_webui.models.notes import Notes, NoteForm
+        await Notes.insert_new_note(
+            user_id=str(user.id),
+            form_data=NoteForm(title=title, data=data or {}))
+    except Exception:
+        pass
+
+async def _run_bg(rid, magazine_path, state_dir, owner_id, base_url,
+                  api_key, model_map, tool_ids):
+    """Execute one run in-process as a detached task.
+
+    On success the core has already persisted COMPLETED. On a dispatch or
+    execution exception the core's fenced error path (Slice 2) fence-persists
+    a HALTED state (RUNNING -> HALTED, the error preserved in the execution
+    claim) before re-raising; this handler only emits the error to stderr
+    because the OWUI process is the only visible channel. No secrets are
+    written to any file or log."""
+    m = _mag()
+    try:
+        await m["ar"].run_magazine_open_webui(
+            magazine_path=magazine_path,
+            state_dir=state_dir,
+            owner_id=owner_id,
+            base_url=base_url,
+            api_key=api_key,
+            model_map=model_map,
+            tool_ids=tool_ids,
+        )
+    except Exception as e:
+        msg = "[magazine] run %s dispatch error: %r" % (rid, repr(e))
+        try:
+            print(msg, file=sys.stderr, flush=True)
+        except Exception:
+            pass
+
+    await _auto_export_completed(owner_id, rid)
+
+
+async def _run_bg_dispatch(rid, magazine_path, state_dir, owner_id,
+                           model_map, prepared, dispatch):
+    """Dispatch an *already-admitted* run in-process as a detached task.
+
+    The run is already admitted (execution claim written, READY -> RUNNING
+    committed) by the caller before this task is created; this handler performs
+    only the dispatch, never re-admission.  On success the core has already
+    persisted COMPLETED. On a dispatch or execution exception the core's
+    fenced error path fence-persists a HALTED state (RUNNING -> HALTED, the
+    error preserved in the execution claim) before re-raising; this handler
+    only emits the error to stderr because the OWUI process is the only
+    visible channel. No secrets are written to any file or log."""
+    m = _mag()
+    try:
+        await m["ar"].run_dispatch(
+            magazine_path=magazine_path,
+            state_path=prepared.state_path,
+            lock_path=prepared.lock_path,
+            owner_id=owner_id,
+            prepared=prepared,
+            model_map=model_map,
+            dispatch=dispatch,
+        )
+    except Exception as e:
+        msg = "[magazine] run %s dispatch error: %r" % (rid, repr(e))
+        try:
+            print(msg, file=sys.stderr, flush=True)
+        except Exception:
+            pass
+
+    await _auto_export_completed(owner_id, rid)
+
+
+async def _stop_run_decision(owner_id, rid):
+    """Durably request Stop, then cancel only this owner's local dispatch.
+
+    Returns ``(status_code, body)``. A 200 ``stopped`` response is emitted
+    only after the run is durably HALTED. A server cancellation failure or
+    timeout remains a 202 ``stop_requested`` response and does not cancel the
+    local Magazine task, allowing a completed output to be checkpointed before
+    the safe cartridge boundary consumes the request.
+    """
+    payload = _status_payload(owner_id, rid)
+    if payload is None:
+        return 404, {"detail": "Run not found"}
+    if payload.get("status") in ("COMPLETED",):
+        return 409, {"detail": "Completed runs cannot be stopped"}
+    existing = payload.get("control")
+    if isinstance(existing, dict) and existing.get("termination_status") == "CONFIRMED":
+        return 200, {
+            "run_id": rid, "status": "stopped", "control": existing,
+            "message": "Stop was already confirmed",
+        }
+    if isinstance(existing, dict) and existing.get("termination_status") == "NOT_APPLIED":
+        return 409, {
+            "run_id": rid, "status": "stop_not_applied", "control": existing,
+            "detail": "Run ended independently before Stop could take effect",
+        }
+    if payload.get("status") == "HALTED" and existing is None:
+        return 409, {
+            "run_id": rid, "status": "already_halted",
+            "detail": "Run is already halted; there is no active workflow to stop",
+        }
+
+    m = _mag()
+    identity = m["ri"].get_runtime_identity()
+    claim = m["em"].load_execution_metadata(
+        os.path.join(os.path.dirname(_state_path(owner_id, rid)), "execution.json")
+    )
+    if claim is None:
+        return 409, {"detail": "Run has no active execution to stop"}
+    if claim.runtime_id != identity.runtime_id:
+        if isinstance(existing, dict) and existing.get("request") == "STOP":
+            outcome = m["racton"].recover_lost_runtime(
+                _state_path(owner_id, rid), _lock_path(owner_id, rid), owner_id,
+                identity.runtime_id, identity.pid, identity.start_ticks,
+                expected_status="RUNNING",
+            )
+            if outcome.outcome == "halted":
+                return 202, {
+                    "run_id": rid,
+                    "status": "stop_requested",
+                    "control": existing,
+                    "message": ("The restarted Magazine process durably halted "
+                                "the run, but cancellation of any previously "
+                                "active inference could not be confirmed"),
+                }
+        return 409, {
+            "detail": ("Run belongs to a different process generation and "
+                       "active inference cancellation cannot be confirmed"),
+            "status": payload.get("status"),
+            "control": existing,
+        }
+
+    if (
+        isinstance(existing, dict)
+        and existing.get("request") == "STOP"
+        and existing.get("cancellation_status") in ("NOT_ATTEMPTED", "FAILED")
+    ):
+        return 202, {
+            "run_id": rid,
+            "status": "stop_requested",
+            "control": existing,
+            "message": ("Stop was already durably requested; Magazine will "
+                        "not duplicate the cancellation request"),
+        }
+
+    state_path = _state_path(owner_id, rid)
+    lock_path = _lock_path(owner_id, rid)
+    try:
+        control = m["rc"].persist_request_stop(
+            state_path, lock_path, owner_id, claim.attempt, identity
+        )
+    except Exception as exc:
+        return 500, {"detail": "Stop request could not be persisted: %r" % exc}
+
+    handle = _RUN_HANDLES.get((owner_id, rid))
+    if handle is None:
+        # The local task may have just reached a safe READY boundary. Consume
+        # the request there if possible; never invent cancellation evidence.
+        try:
+            stopped = m["rc"].persist_stop_if_requested(
+                state_path, lock_path, owner_id, claim.attempt, identity,
+                method="boundary-without-local-task",
+            )
+        except Exception:
+            stopped = None
+        refreshed = _status_payload(owner_id, rid)
+        if stopped is not None and refreshed.get("control", {}).get("termination_status") == "CONFIRMED":
+            return 200, {
+                "run_id": rid, "status": "stopped",
+                "control": refreshed["control"],
+                "message": "Workflow stopped at a safe cartridge boundary",
+            }
+        return 202, {
+            "run_id": rid, "status": "stop_requested", "control": control,
+            "message": "Stop is durable; no local active inference could be confirmed",
+        }
+
+    dispatch = handle["dispatch"]
+    task = handle["task"]
+    cancellation = await dispatch.cancel_active()
+    try:
+        control = m["rc"].persist_cancellation_result(
+            state_path, lock_path, owner_id, claim.attempt, identity,
+            confirmed=cancellation.confirmed,
+            detail=cancellation.detail,
+        )
+    except Exception as exc:
+        return 500, {
+            "detail": "Cancellation evidence could not be persisted: %r" % exc,
+            "status": "stop_requested",
+        }
+
+    if cancellation.confirmed:
+        if not task.done():
+            task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            # The core error boundary has already attempted a fenced HALT.
+            pass
+    elif not cancellation.active:
+        # No inference was accepted, or the task is between cartridges. Give
+        # the cooperative boundary one event-loop turn without cancelling it.
+        try:
+            await asyncio.wait_for(asyncio.shield(task), timeout=0.5)
+        except (asyncio.TimeoutError, asyncio.CancelledError, Exception):
+            pass
+    else:
+        return 202, {
+            "run_id": rid,
+            "status": "stop_requested",
+            "control": control,
+            "message": ("Stop is durable, but active inference cancellation "
+                        "was not confirmed; no successful cancellation is reported"),
+        }
+
+    # Once the local task has ended, close a possible READY/RUNNING race under
+    # the same claim fence. This is safe after a confirmed provider cancel, or
+    # when no provider task was ever accepted.
+    if task.done():
+        try:
+            refreshed_state = m["ss"].load_run_state(state_path)
+            if refreshed_state["status"] in ("READY", "RUNNING"):
+                m["rc"].persist_stop_if_requested(
+                    state_path, lock_path, owner_id, claim.attempt, identity,
+                    method=("active-inference-cancelled" if cancellation.confirmed
+                            else "boundary-before-inference"),
+                )
+            refreshed_state = m["ss"].load_run_state(state_path)
+            if refreshed_state["status"] == "HALTED":
+                m["rc"].persist_confirm_termination(
+                    state_path, lock_path, owner_id, claim.attempt, identity,
+                    ("active-inference-cancelled" if cancellation.confirmed
+                     else "boundary-before-inference"),
+                )
+        except Exception:
+            pass
+
+    refreshed = _status_payload(owner_id, rid)
+    final_control = (refreshed or {}).get("control") or control
+    if final_control.get("termination_status") == "NOT_APPLIED":
+        return 409, {
+            "run_id": rid, "status": "stop_not_applied", "control": final_control,
+            "detail": "Run ended independently before Stop could take effect",
+        }
+    if (
+        refreshed is not None
+        and refreshed.get("status") == "HALTED"
+        and final_control.get("termination_status") == "CONFIRMED"
+    ):
+        return 200, {
+            "run_id": rid, "status": "stopped", "control": final_control,
+            "message": "Workflow termination is durably confirmed",
+        }
+    return 202, {
+        "run_id": rid, "status": "stop_requested", "control": final_control,
+        "message": "Stop is durable and will take effect at the next safe boundary",
+    }
+
+
+# ---------------------------------------------------------------------------
+# HTML page (rich runner UI)
+# ---------------------------------------------------------------------------
+_HTML = r"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Magazine — Workflows</title>
+<style>
+  :root{--bg:#f5f7fb;--card:#ffffff;--soft:#eef2f8;--ink:#172033;--muted:#49576c;--line:#778399;--accent:#175bc4;--button-ink:#ffffff;--ok:#17622f;--err:#a32721;color-scheme:light}
+  [data-theme="dark"]{--bg:#111827;--card:#182234;--soft:#202d42;--ink:#edf2fa;--muted:#c0ccde;--line:#78879d;--accent:#98c0ff;--button-ink:#111827;--ok:#91ddb0;--err:#ffaaa3;color-scheme:dark}
+  *{box-sizing:border-box}
+  body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;max-width:1080px;margin:20px auto;padding:0 16px;color:var(--ink);background:var(--bg);line-height:1.4}
+  h1{font-size:22px;margin:0 0 4px}
+  p{margin:8px 0} header,.actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap} header{justify-content:space-between;margin-bottom:16px}
+  section{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:12px}
+  .card-header{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px;gap:12px;flex-wrap:wrap}
+  h2{font-size:17px;margin:0} h3{font-size:15px;margin:0 0 8px}
+  .badge{font-size:12px;font-weight:600;padding:2px 8px;border:1px solid var(--line);border-radius:999px;background:var(--soft)}
+  .badge.ok{color:var(--ok)} .badge.err{color:var(--err)}
+  input,select,textarea{max-width:100%;font:inherit;font-size:14px;padding:8px;border:1px solid var(--line);border-radius:7px;background:var(--card);color:var(--ink)}
+  select{min-width:140px} textarea{width:100%;resize:vertical;font-family:ui-monospace,monospace}
+  button{cursor:pointer;border:1px solid var(--line);border-radius:7px;padding:8px 14px;background:var(--card);color:var(--ink);font:inherit;font-size:14px;font-weight:600}
+  button.primary{background:var(--accent);color:var(--button-ink);border-color:var(--accent)}
+  button:hover:not(:disabled){filter:brightness(.94)} button:disabled{cursor:not-allowed;border-style:dashed;background:var(--soft);color:var(--muted);border-color:var(--line)}
+  :focus-visible{outline:3px solid var(--accent);outline-offset:3px}
+  .field-group{display:flex;flex-direction:column;gap:6px;min-width:0}
+  .field-group + .field-group{margin-top:10px}
+  .field-group + button{margin-top:10px}
+  .field-group > input,.field-group > select,.field-group > textarea{min-width:0;max-width:100%}
+  .field-group > input,.field-group > select{align-self:flex-start}
+  .field-actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px;min-width:0}
+  .field-actions > select{flex:1 1 260px;min-width:0;max-width:100%}
+  .field-actions > button{flex:0 0 auto;max-width:100%}
+  .workflow-name,#library-msg,#library-guidance{min-width:0;max-width:100%;overflow-wrap:anywhere}
+  details{margin:10px 0} summary{cursor:pointer;color:var(--muted)}
+  .cartridge{display:grid;grid-template-columns:28px minmax(80px,1fr) minmax(170px,1.5fr) minmax(160px,2fr);gap:10px;align-items:start;background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:8px}
+  .cartridge .ord{font-weight:800;color:var(--accent);font-size:14px}
+  .cartridge .id{font-size:14px;overflow-wrap:anywhere}
+  .cartridge .cellm{min-width:0}
+  .cartridge.shared{grid-template-columns:28px minmax(80px,1fr) minmax(160px,3.5fr)}
+  #model-mode-control,#shared-model-control{margin-bottom:12px}
+  #model-mode,#model-all{max-width:100%}
+  .cartridge .mk{font-size:12px;color:var(--muted);margin-bottom:4px}
+  .cartridge label.mk{display:block}
+  .cartridge select{width:100%}
+  .cartridge .prompt{font-size:13px;color:var(--muted);max-height:140px;overflow:auto;overflow-wrap:anywhere;white-space:pre-wrap}
+  .cartridge .tools{display:none}
+  .tools-note{font-size:12px;color:var(--muted);margin-top:6px}
+  .tool-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,18rem),1fr));align-items:start;gap:8px;max-height:min(24rem,50vh);overflow-y:auto;overflow-x:hidden;min-width:0;padding:6px}
+  .tool{min-width:0;border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+  .tool label{display:flex;align-items:flex-start;gap:8px;min-width:0;cursor:pointer}
+  .tool .tool-text{min-width:0;flex:1}
+  .tool input[type=checkbox]{flex:0 0 auto;margin:2px 0}
+  .tool .tn,.tool .td{display:block;overflow-wrap:anywhere}
+  .tool .tn{font-size:13px;font-weight:600}
+  .tool .td{font-size:11px;color:var(--muted)}
+  .result{background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:12px;margin-top:12px;display:none}
+  .result.show{display:block}
+  .result pre{white-space:pre-wrap;word-break:break-word;background:transparent;padding:0;border-radius:0;margin:0;font-size:13px;overflow:auto}
+  .msg{font-size:13px;margin:8px 0}
+  .msg.err{color:var(--err)}
+  .msg.ok{color:var(--ok)}
+  .muted{color:var(--muted);font-size:12px}
+  .hidden{display:none!important}
+  .pre-doc,.output{white-space:pre-wrap;overflow-wrap:anywhere;max-height:260px;overflow:auto;font-size:14px;background:var(--soft);color:var(--ink);padding:10px;border-radius:6px}
+  .output{font-family:inherit} .saved-result{border-top:1px solid var(--line);padding-top:12px;margin-top:12px}
+  progress{width:100%;height:18px;accent-color:var(--accent)} .timeline{padding-left:24px;max-height:200px;overflow:auto}
+  .timeline li{padding:4px 0} .timeline .finished{color:var(--ok)} .timeline .working{font-weight:700}
+  @media(max-width:700px){body{padding:0 10px}.cartridge,.cartridge.shared{grid-template-columns:24px 1fr}.cartridge .cellm,.cartridge .prompt{grid-column:2}.actions>*{max-width:100%}.actions select{flex:1}section{padding:12px}}
+  @media(max-width:700px){.tool-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header><h1>Magazine</h1><div class="actions"><label for="appearance">Appearance</label><select id="appearance"><option value="follow">Follow Open WebUI</option><option value="light">Light</option><option value="dark">Dark</option></select></div></header>
+<main>
+<section aria-labelledby="workflow-heading">
+  <div class="card-header">
+    <h2 id="workflow-heading">Your workflows</h2>
+    <span id="library-badge" class="badge muted">loading</span>
+  </div>
+  <div class="field-group">
+    <label for="library-workflows">Workflow</label>
+    <div class="field-actions">
+    <select id="library-workflows" aria-describedby="library-guidance library-msg"></select>
+    <button id="btn-library-select" class="primary" disabled>Load your workflow</button>
+    <button id="btn-library-refresh">Refresh list</button>
+    </div>
+  </div>
+  <p id="library-guidance" class="muted" role="status">Select a workflow, then choose Load your workflow.</p>
+  <p id="library-msg" class="msg hidden" role="status"></p>
+  <details><summary>Add a workflow</summary>
+    <div class="field-group">
+      <label for="project-zip">Workflow ZIP</label>
+      <input id="project-zip" type="file" accept=".zip">
+    </div>
+    <div class="field-group">
+      <label for="project-id">Short name (optional)</label>
+      <input id="project-id" maxlength="64" placeholder="Derived from the ZIP filename">
+    </div>
+    <button id="btn-project-import" disabled>Add a workflow</button>
+    <p id="project-import-msg" class="msg hidden" role="status"></p>
+    <p class="muted" id="import-note">Only administrators can add workflows. Added workflows are shared; your runs and results remain private.</p>
+  </details>
+  <details><summary>Other ways to load a workflow</summary>
+  <div class="card-header">
+    <span id="pkg-badge" class="badge muted">not loaded</span>
+  </div>
+  <div class="field-group">
+    <label for="file">Package file</label>
+    <input type="file" id="file" accept=".magazine,.json,.zip">
+    <span class="muted">Use a .magazine package or a JSON file.</span>
+  </div>
+  <div class="field-group">
+    <label for="json">Or paste JSON</label>
+    <textarea id="json" rows="3" spellcheck="false" placeholder='{"schema_version":"1.0","cartridges":[{"id":"cart-a","job_type":"cart-a","prompt":"..."}]}'></textarea>
+  </div>
+  <button id="btn-validate">Check workflow</button>
+  <p class="msg hidden" id="pkg-msg" role="status"></p>
+  <pre id="pkg-doc" class="muted pre-doc hidden"></pre>
+  </details>
+</section>
+<section aria-labelledby="setup-heading">
+  <div class="card-header"><h2 id="setup-heading">Set up</h2><span id="setup-workflow" class="muted workflow-name hidden"></span></div>
+  <p id="setup-summary" class="muted">Load a workflow to see its steps.</p>
+  <div id="cartridge-s" class="hidden">
+  <div class="card-header">
+    <h3 id="cartridges-h">Workflow steps</h3>
+    <span id="cartridge-badge" class="badge ok"></span>
+  </div>
+  <div id="model-mode-control" class="field-group hidden">
+    <label for="model-mode">AI model selection</label>
+    <select id="model-mode">
+      <option value="independent">Choose a model for each step</option>
+      <option value="shared">Use the same model for all steps</option>
+    </select>
+  </div>
+  <div id="shared-model-control" class="field-group hidden">
+    <label for="model-all">AI model for all steps</label>
+    <select id="model-all"></select>
+  </div>
+  <div id="cartridges"></div>
+  </div>
+  <details><summary>Model information</summary>
+  <div class="card-header">
+    <h3>Available models (reference only)</h3>
+    <span id="models-badge" class="badge muted">loading</span>
+  </div>
+  <p class="muted">Choose models using the dropdowns above.</p>
+  <pre id="models" class="muted pre-doc">loading…</pre>
+  </details>
+  <div class="card-header">
+    <h3 id="tools-heading">Tools for this workflow</h3>
+    <span id="tools-badge" class="badge muted">loading</span>
+  </div>
+  <div class="actions">
+    <span class="muted" id="tool-count" role="status">Tools selected: 0 of 0</span>
+    <button id="btn-tools-select-all" disabled>Select all</button>
+    <button id="btn-tools-clear-all" disabled>Clear all</button>
+  </div>
+  <p id="tools-empty" class="muted">Loading tools…</p>
+  <div id="tools" class="tool-grid" role="group" aria-labelledby="tools-heading"></div>
+  <p class="muted">Selected tools are available to every step.</p>
+  <button class="primary" id="btn-create" aria-describedby="prepare-note prepare-help" disabled>Prepare workflow</button>
+  <p id="prepare-note" class="muted">This saves your choices. It doesn't start the workflow.</p>
+  <p id="prepare-help" class="muted" role="status">Load a workflow to set it up.</p>
+  <p class="msg hidden" id="create-msg" role="status"></p>
+</section>
+<section aria-labelledby="control-heading">
+  <h2 id="control-heading">Run workflow</h2>
+  <p id="run-empty" class="muted">Prepare a workflow or open previous work below.</p>
+  <div class="result hidden" id="run-result">
+    <div class="card-header">
+      <h3 id="run-title"></h3>
+      <span id="run-badge" class="badge ok"></span>
+    </div>
+    <p id="run-reference" class="muted"></p>
+    <p id="run-summary" role="status"></p>
+    <progress id="run-progress" aria-label="Finished workflow steps" value="0" max="1"></progress>
+    <ol id="run-steps" class="timeline"></ol>
+    <div class="actions"><button class="primary" id="btn-start" disabled>Start workflow</button><button id="btn-stop" disabled>Stop workflow</button><button id="btn-refresh-run" disabled>Check progress</button><button id="btn-recover" class="hidden" disabled>Prepare to continue</button></div>
+    <p id="recovery-note" class="muted hidden"></p>
+    <p id="control-msg" class="msg hidden" role="status"></p>
+    <details><summary>Run details</summary><pre id="run-detail" class="pre-doc"></pre></details>
+  </div>
+</section>
+<section aria-labelledby="results-heading">
+  <h2 id="results-heading">Results and previous work</h2>
+  <div class="field-group">
+    <label for="history-runs">Previous work</label>
+    <div class="field-actions">
+      <select id="history-runs"></select>
+      <button id="btn-history-open" disabled>View previous work</button>
+      <button id="btn-history-refresh">Refresh list</button>
+    </div>
+  </div>
+  <p id="history-msg" class="msg" role="status"></p>
+  <p id="results-msg" class="msg" role="status">Choose previous work to view its progress and results.</p>
+  <div id="saved-results"></div>
+  <details id="error-diagnostics" class="hidden"><summary>Error details</summary><pre id="error-detail" class="pre-doc"></pre></details>
+</section>
+</main>
+<script>
+(function(){
+  var S = { valid:false, name:"", document:null, cartridges:[],
+            toolIds:[], models:[], tools:[], toolsReady:false, toolChoices:Object.create(null), run:null, validationEpoch:0, modelEpoch:0,
+            libraryAvailable:false, canImport:false, importBusy:false, prepareBusy:false, modelStatus:"loading",
+            libraryEntries:[], libraryRefreshEpoch:0, libraryRefreshing:false, libraryLoad:null,
+            loadedWorkflowId:"", librarySelectionPending:false,
+            setupIdentity:"", chosenModels:Object.create(null), modelMode:"independent", sharedModel:"", unavailableChoice:false };
+  var el = function(id){ return document.getElementById(id); };
+  function $all(sel){ return Array.prototype.slice.call(document.querySelectorAll(sel)); }
+  // Setup and the selected persisted run are independent. Each selection owns
+  // its requests and poll timer; old responses have no authority over a new one.
+  var view = null, historyEpoch = 0, runNames = Object.create(null);
+  var appearance = "follow", themeMedia = window.matchMedia("(prefers-color-scheme: dark)");
+
+  function stored(key){ try { return localStorage.getItem(key); } catch(e){ return null; } }
+  function applyAppearance(){
+    var owui = stored("theme"), root = document.documentElement;
+    var followsDark = root.classList.contains("dark") ||
+      (!root.classList.contains("light") && (owui === "dark" ||
+       (owui !== "light" && themeMedia.matches)));
+    root.setAttribute("data-theme", appearance === "follow" ? (followsDark ? "dark" : "light") : appearance);
+  }
+  function initAppearance(){
+    var saved = stored("magazine.appearance");
+    appearance = saved === "light" || saved === "dark" ? saved : "follow";
+    el("appearance").value = appearance; applyAppearance();
+    el("appearance").addEventListener("change", function(){
+      appearance = this.value;
+      try { localStorage.setItem("magazine.appearance", appearance); } catch(e){}
+      applyAppearance();
+    });
+    if (typeof MutationObserver !== "undefined") new MutationObserver(applyAppearance).observe(document.documentElement, {attributes:true,attributeFilter:["class"]});
+    if (themeMedia.addEventListener) themeMedia.addEventListener("change", applyAppearance);
+    window.addEventListener("storage", function(e){ if (e.key === "theme") applyAppearance(); });
+  }
+
+  async function api(path, method, body, controller){
+    controller = controller || new AbortController();
+    var timeout = setTimeout(function(){ controller.abort(); }, 10000);
+    var opts = { method:method, headers:{"Content-Type":"application/json"}, signal:controller.signal };
+    if (body !== undefined && body !== null) opts.body = JSON.stringify(body);
+    try {
+      var r = await fetch(path, opts);
+      var t = await r.text();
+      try { return { ok:r.ok, code:r.status, data: JSON.parse(t) }; }
+      catch (e) { return { ok:r.ok, code:r.status, data: t }; }
+    } finally { clearTimeout(timeout); }
+  }
+  function readFile(file, asText){
+    return new Promise(function(resolve, reject){
+      var r = new FileReader();
+      r.onload = function(){ resolve(asText ? r.result : r.result.split(",")[1]); };
+      r.onerror = reject;
+      if (asText) r.readAsText(file); else r.readAsDataURL(file);
+    });
+  }
+  function setBadge(id, text, cls){
+    var b = el(id); if(!b) return;
+    b.textContent = text; b.className = "badge " + cls;
+  }
+  function showMsg(id, txt, cls){
+    var e = el(id); if(!e) return;
+    e.textContent = txt; e.classList.add("msg"); e.classList.remove("hidden");
+    e.classList.remove("err", "ok");
+    if(cls) e.classList.add(cls);
+  }
+  function modelKey(m){ return m ? (m.id || m.model || m.name) : ""; }
+  function errMsg(d){
+    if (d && d.data && d.data.detail){
+      var detail = d.data.detail;
+      if (typeof detail === "string") return detail;
+      if (detail.admission_errors) return detail.admission_errors.join("; ");
+      return JSON.stringify(detail);
+    }
+    if (typeof d === "string") return d;
+    if (d && typeof d === "object") return JSON.stringify(d.data || d);
+    return String(d);
+  }
+  function usefulError(d, fallback){
+    var raw = errMsg(d);
+    el("error-detail").textContent = raw;
+    el("error-diagnostics").classList.remove("hidden");
+    if (d.code === 401) return "Sign in to Open WebUI again, then check progress before trying again.";
+    if (d.code === 403) return "You don't have permission to do that.";
+    if (d.code === 404) return "This workflow isn't available to your account. Refresh previous work.";
+    if (/model.*(not available|unavailable|not admitted|not in the user's available)/i.test(raw)) return "This AI model isn't available. Choose another to continue.";
+    if (/tool.*(not available|unavailable|not admitted|not in the user's available)/i.test(raw)) return "A selected tool isn't available. Review your tools and try again.";
+    if (d.code === 409){
+      if (/cannot start a RUNNING run/i.test(raw)) return "This workflow has already started. You can check its progress below.";
+      if (/cannot start a COMPLETED run/i.test(raw)) return "This workflow has already finished. Read its results below.";
+      if (/auto-halted|cannot start a HALTED run/i.test(raw)) return "The workflow has stopped. Check what happened before preparing to continue.";
+      if (/lock_busy|lock.*held|owner_alive|same_runtime/i.test(raw)) return "This workflow is still in use. Check progress before trying again.";
+      if (/already exists|duplicate project/i.test(raw)) return "A workflow with that short name already exists. Choose another name.";
+      if (/READY recovery refused|not HALTED/i.test(raw)) return "Magazine couldn't prepare this workflow to continue. Check progress and review the error details.";
+    }
+    return fallback;
+  }
+
+  // --- models ---
+  function loadModels(){
+    var epoch = ++S.modelEpoch;
+    S.modelStatus = "loading"; updatePrepareControl();
+    return api("/api/magazine/models","GET").then(function(d){
+      if (epoch !== S.modelEpoch) return;
+      if(!d.ok){ S.modelStatus = "error"; updatePrepareControl(); setBadge("models-badge","unavailable","err"); showMsg("setup-summary",usefulError(d,"We couldn't load your AI models. Refresh the page to try again."),"err"); return; }
+      S.modelStatus = "ready";
+      S.models = (d.data.models||[]).filter(function(m){return !!modelKey(m);});
+      setBadge("models-badge", S.models.length+" found","ok");
+      el("models").textContent = S.models.map(function(m){ return modelKey(m); }).join("\n");
+      if (S.valid) buildModelOptions();
+      else updatePrepareControl();
+    }).catch(function(){ if (epoch !== S.modelEpoch) return; S.modelStatus = "error"; updatePrepareControl(); setBadge("models-badge","unavailable","err"); showMsg("setup-summary","We couldn't load your AI models. Refresh the page to try again.","err"); });
+  }
+  function loadTools(){
+    return api("/api/magazine/tools","GET").then(function(d){
+      if(!d.ok){ toolsUnavailable(); return; }
+      S.tools = (d.data.tools||[]);
+      S.toolsReady = true;
+      setBadge("tools-badge", S.tools.length+" found","ok");
+      var g = el("tools"); g.innerHTML = "";
+      for (var t of S.tools){
+        var id = t.id || t.name || "";
+        var name = t.name || id;
+        var desc = "";
+        if (t.specs && t.specs[0] && t.specs[0].description) desc = t.specs[0].description;
+        if (!desc && t.content) desc = t.content;
+        var row = document.createElement("div"); row.className = "tool";
+        var cb = document.createElement("input"); cb.type = "checkbox"; cb.value = id; cb.id = "tool-"+id;
+        cb.onchange = function(){
+          if (!S.valid || !S.toolsReady) return;
+          S.toolChoices[this.value] = this.checked; syncTools();
+        };
+        var lab = document.createElement("label");
+        lab.setAttribute("for", cb.id);
+        lab.appendChild(cb);
+        var content = document.createElement("span"); content.className = "tool-text";
+        var sp = document.createElement("span"); sp.className = "tn"; sp.textContent = name;
+        content.appendChild(sp);
+        var dd = document.createElement("span"); dd.className = "td"; dd.textContent = String(desc||"").slice(0,90);
+        content.appendChild(dd); lab.appendChild(content);
+        row.appendChild(lab); g.appendChild(row);
+      }
+      el("tools-empty").textContent = "No tools are available to your account.";
+      el("tools-empty").classList[S.tools.length ? "add" : "remove"]("hidden");
+      syncTools(); updatePrepareControl();
+    }).catch(toolsUnavailable);
+  }
+  function toolsUnavailable(){
+    S.toolsReady = false;
+    setBadge("tools-badge","unavailable","err");
+    el("tools-empty").textContent = "We couldn't load your tools. Refresh the page to try again.";
+    el("tools-empty").classList.remove("hidden");
+    syncTools(); updatePrepareControl();
+  }
+  function syncTools(){
+    S.toolIds = [];
+    // An absent choice means selected for a newly configured workflow. Explicit
+    // exclusions survive rechecking the same content and unrelated UI changes.
+    for (var t of S.tools){
+      var id = t.id || t.name || "";
+      var selected = S.valid && S.toolsReady && S.toolChoices[id] !== false;
+      var cb = el("tool-"+id);
+      if (cb){ cb.checked = selected; cb.disabled = !S.valid || !S.toolsReady; }
+      if (selected) S.toolIds.push(id);
+    }
+    var disabled = !S.valid || !S.toolsReady || !S.tools.length;
+    el("btn-tools-select-all").disabled = disabled; el("btn-tools-clear-all").disabled = disabled;
+    updateToolCount(); updateCartridgeToolCells();
+  }
+  function selectTools(selected){
+    if (!S.valid || !S.toolsReady) return;
+    S.tools.forEach(function(t){ S.toolChoices[t.id || t.name || ""] = selected; });
+    syncTools();
+  }
+  function updateToolCount(){
+    var n = el("tool-count"); if (n) n.textContent = "Tools selected: " + S.toolIds.length + " of " + S.tools.length;
+  }
+  function updateCartridgeToolCells(){
+    for (var i=0;i<S.cartridges.length;i++){
+      var cell = el("tools-"+S.cartridges[i].id);
+      if (cell) cell.textContent = S.toolIds.length ? S.toolIds.join(", ") : "run-level (none selected)";
+    }
+  }
+  function initModelMap(){
+    var unavailable = false;
+    for (var i=0;i<S.cartridges.length;i++){
+      var key = S.cartridges[i].id;
+      if (!modelAvailable(S.chosenModels[key])){
+        if (S.chosenModels[key]) unavailable = true;
+        S.chosenModels[key] = "";
+      }
+    }
+    if (S.sharedModel && !modelAvailable(S.sharedModel)){
+      unavailable = true; S.sharedModel = "";
+    }
+    if (unavailable) S.unavailableChoice = true;
+    return unavailable;
+  }
+  function modelAvailable(id){
+    return !!id && S.models.some(function(m){return modelKey(m) === id;});
+  }
+  function allModelsSelected(){
+    if (S.modelMode === "shared") return modelAvailable(S.sharedModel);
+    return S.cartridges.every(function(c){return modelAvailable(S.chosenModels[c.id]);});
+  }
+  function updatePrepareControl(){
+    var reason = "";
+    if (S.prepareBusy) reason = "Preparing workflow…";
+    else if (S.libraryLoad) reason = "Wait for the workflow to finish loading.";
+    else if (S.librarySelectionPending) reason = "Load the selected workflow before preparing.";
+    else if (!S.valid || !S.cartridges.length) reason = "Load a workflow to set it up.";
+    else if (S.modelStatus === "loading") reason = "Loading AI models…";
+    else if (S.modelStatus === "error") reason = "We couldn't load your AI models. Refresh the page to try again.";
+    else if (!S.models.length) reason = "No AI models are available. Ask an administrator for access.";
+    else if (!S.toolsReady) reason = el("tools-badge").textContent === "unavailable" ?
+      "We couldn't load your tools. Refresh the page to try again." : "Loading tools…";
+    else if (!allModelsSelected()){
+      if (S.modelMode === "shared") reason = "Choose an AI model for the workflow before continuing.";
+      else {
+        var missing = S.cartridges.findIndex(function(c){return !modelAvailable(S.chosenModels[c.id]);});
+        reason = "Choose an AI model for Step " + (missing+1) + " before continuing.";
+      }
+    }
+    el("btn-create").disabled = !!reason;
+    el("prepare-help").textContent = reason;
+    el("prepare-help").classList[reason ? "remove" : "add"]("hidden");
+    if (S.valid) updateSetupSummary();
+  }
+  function updateSetupSummary(){
+    if (S.valid && (S.libraryLoad || S.librarySelectionPending)) showMsg("setup-summary","These settings are for your loaded workflow.");
+    else if (!S.models.length) showMsg("setup-summary","No AI models are available to your account. Ask an administrator for access.","err");
+    else if (S.unavailableChoice) showMsg("setup-summary","An AI model you chose is no longer available. Choose another to continue.","err");
+    else showMsg("setup-summary",allModelsSelected() ? "Review your tools, then choose Prepare workflow." :
+      S.modelMode === "shared" ? "Choose an AI model for the workflow." : "Choose an AI model for each step.");
+  }
+  function fillModelOptions(sel, selected){
+      sel.innerHTML = "";
+      var placeholder = document.createElement("option");
+      placeholder.value = ""; placeholder.textContent = "Choose an AI model";
+      placeholder.selected = !selected; sel.appendChild(placeholder);
+      sel.disabled = !S.models.length;
+      if (S.models.length){
+        for (var m of S.models){
+          var mk = modelKey(m);
+          var opt = document.createElement("option");
+          opt.value = mk; opt.textContent = mk;
+          if (mk === selected) opt.selected = true;
+          sel.appendChild(opt);
+        }
+      }
+      sel.value = selected || "";
+  }
+  function buildModelOptions(){
+    initModelMap();
+    var shared = S.modelMode === "shared";
+    el("model-mode").value = S.modelMode;
+    el("model-mode-control").classList[S.cartridges.length > 1 ? "remove" : "add"]("hidden");
+    el("shared-model-control").classList[shared ? "remove" : "add"]("hidden");
+    fillModelOptions(el("model-all"), S.sharedModel);
+    el("model-all").disabled = !shared || !S.models.length;
+    el("model-all").onchange = function(){
+      if (S.modelMode !== "shared") return;
+      S.sharedModel = modelAvailable(this.value) ? this.value : "";
+      if (allModelsSelected()) S.unavailableChoice = false;
+      updateSetupSummary();
+      updatePrepareControl(); if (!S.prepareBusy) el("create-msg").classList.add("hidden");
+    };
+    for (var i=0;i<S.cartridges.length;i++){
+      var c = S.cartridges[i], sel = el("model-"+c.id); if(!sel) continue;
+      fillModelOptions(sel, S.chosenModels[c.id]);
+      sel.disabled = shared || !S.models.length;
+      el("cartridge-"+c.id).classList[shared ? "add" : "remove"]("shared");
+      el("model-cell-"+c.id).classList[shared ? "add" : "remove"]("hidden");
+      sel.onchange = function(){ onModelChange(this); };
+    }
+    updatePrepareControl();
+    updateSetupSummary();
+  }
+  function onModelChange(sel){
+    if (S.modelMode !== "independent") return;
+    var key = sel.dataset.modelKey;
+    S.chosenModels[key] = modelAvailable(sel.value) ? sel.value : "";
+    if (allModelsSelected()) S.unavailableChoice = false;
+    updateSetupSummary();
+    updatePrepareControl();
+    if (!S.prepareBusy) el("create-msg").classList.add("hidden");
+  }
+  el("model-mode").addEventListener("change", function(){
+    if (!S.valid || S.cartridges.length < 2) return;
+    S.modelMode = this.value === "shared" ? "shared" : "independent";
+    buildModelOptions(); if (!S.prepareBusy) el("create-msg").classList.add("hidden");
+  });
+  function configuredRun(){
+    // The validated source and historical runs are never edited. A newly
+    // prepared independent run has one existing-schema logical key per ID.
+    var document = JSON.parse(JSON.stringify(S.document)), map = Object.create(null);
+    document.cartridges.forEach(function(c){
+      if (S.modelMode === "independent"){
+        c.job_type = c.id; map[c.id] = S.chosenModels[c.id];
+      } else map[c.job_type] = S.sharedModel;
+    });
+    return {magazine:JSON.stringify(document), model_map:map, tool_ids:S.toolIds.slice()};
+  }
+
+  // --- library catalogue and shared snapshot validation ---
+  function canLoadWorkflow(identifier){
+    return S.libraryAvailable && S.libraryEntries.some(function(w){return w.valid && w.workflow_id === identifier;});
+  }
+  function cancelLibraryLoad(){
+    if (S.libraryLoad) S.libraryLoad.controller.abort();
+    S.libraryLoad = null;
+  }
+  function loadedConfirmation(){
+    var count = S.cartridges.length;
+    return "Workflow loaded: " + S.name + " — " + count + (count === 1 ? " step." : " steps.");
+  }
+  function updateLibraryControls(){
+    var button = el("btn-library-select");
+    button.disabled = !!S.libraryLoad || S.libraryRefreshing || !canLoadWorkflow(el("library-workflows").value);
+    button.textContent = S.libraryLoad ? "Loading workflow…" : "Load your workflow";
+    button.setAttribute("aria-busy", S.libraryLoad ? "true" : "false");
+    button.classList[S.valid && !S.librarySelectionPending && !S.libraryLoad ? "remove" : "add"]("primary");
+  }
+  function updateLibraryGuidance(){
+    var message = "";
+    if (!S.valid) message = "Select a workflow, then choose Load your workflow.";
+    else if (S.librarySelectionPending){
+      var selected = S.libraryEntries.find(function(w){return w.workflow_id === el("library-workflows").value;});
+      message = (selected ? "Selected: " + selected.name + ". " : "No valid workflow is selected. ") +
+        "Loaded: " + S.name + ". Choose Load your workflow to replace it.";
+    } else if (!S.loadedWorkflowId) message = "Loaded workflow: " + S.name + " (from a file or JSON).";
+    el("library-guidance").textContent = message;
+    el("library-guidance").classList[message ? "remove" : "add"]("hidden");
+  }
+  function onWorkflowSelection(){
+    S.validationEpoch++; cancelLibraryLoad();
+    S.librarySelectionPending = S.valid && el("library-workflows").value !== S.loadedWorkflowId;
+    el("library-msg").classList.add("hidden");
+    if (S.valid && !S.librarySelectionPending) showMsg("library-msg",loadedConfirmation(),"ok");
+    updateLibraryControls(); updateLibraryGuidance(); updatePrepareControl();
+  }
+  async function refreshLibrary(){
+    var epoch = ++S.libraryRefreshEpoch;
+    S.libraryRefreshing = true;
+    el("btn-library-refresh").disabled = true;
+    updateLibraryControls();
+    if (!S.valid && !S.libraryLoad) showMsg("library-msg", "Loading workflows…");
+    try {
+      var d = await api("/api/magazine/library", "GET");
+      if (epoch !== S.libraryRefreshEpoch) return;
+      if (!d.ok) throw new Error(usefulError(d,"We couldn't load your workflows. Refresh the list to try again."));
+      var v = d.data;
+      S.libraryAvailable = !!v.available; S.canImport = !!v.can_import;
+      S.libraryEntries = v.workflows || [];
+      var selected = el("library-workflows").value;
+      var select = el("library-workflows"); select.innerHTML = "";
+      for (var workflow of (v.workflows || [])){
+        var option = document.createElement("option");
+        option.value = workflow.workflow_id;
+        option.disabled = !workflow.valid;
+        option.textContent = workflow.name + " — " + workflow.cartridge_count + " steps" + (workflow.valid ? "" : " — unavailable");
+        select.appendChild(option);
+      }
+      var first = (v.workflows || []).find(function(w){ return w.valid; });
+      select.value = canLoadWorkflow(selected) ? selected : first ? first.workflow_id : "";
+      if (S.libraryLoad && S.libraryLoad.identifier !== select.value){ S.validationEpoch++; cancelLibraryLoad(); }
+      if (S.valid && S.loadedWorkflowId) S.librarySelectionPending = select.value !== S.loadedWorkflowId;
+      var count = (v.workflows || []).length;
+      setBadge("library-badge", v.available ? count + (count === 1 ? " workflow" : " workflows") : "unavailable", v.available ? "ok" : "muted");
+      if (!S.libraryLoad){
+        if (!v.available) showMsg("library-msg","Workflows are unavailable. You can still upload a file below.");
+        else if (S.valid) showMsg("library-msg",loadedConfirmation(),"ok");
+        else if (!first) showMsg("library-msg","No workflows are available. Ask an administrator to add one, or upload a file below.");
+        else el("library-msg").classList.add("hidden");
+      }
+    } catch(e){
+      if (epoch !== S.libraryRefreshEpoch) return;
+      S.libraryAvailable = false; S.canImport = false;
+      setBadge("library-badge", "unavailable", "muted");
+      showMsg("library-msg", "Workflows are unavailable. Try refreshing the list, or upload a file below.", "err");
+    } finally {
+      if (epoch === S.libraryRefreshEpoch){
+        S.libraryRefreshing = false; el("btn-library-refresh").disabled = false;
+        updateLibraryControls(); updateLibraryGuidance(); updatePrepareControl(); updateImportControl();
+      }
+    }
+  }
+  function updateImportControl(){
+    el("btn-project-import").disabled = !S.libraryAvailable || !S.canImport || S.importBusy;
+  }
+  async function importProject(){
+    if (!S.canImport || S.importBusy) return;
+    var file = el("project-zip").files[0];
+    if (!file || !file.name.toLowerCase().endsWith(".zip")){
+      showMsg("project-import-msg", "Choose a workflow ZIP file first.", "err"); return;
+    }
+    if (file.size > 8 * 1024 * 1024){
+      showMsg("project-import-msg", "This ZIP is too large. The limit is 8 MB.", "err"); return;
+    }
+    S.importBusy = true; updateImportControl();
+    showMsg("project-import-msg", "Checking and adding workflow…");
+    try {
+      var body = { file_name:file.name, file_data_b64:await readFile(file, false),
+                   project_id:el("project-id").value.trim() };
+      var d = await api("/api/magazine/library/import", "POST", body);
+      if (!d.ok || !d.data.imported){
+        showMsg("project-import-msg", usefulError(d,"Magazine couldn't add this workflow. Check the file and review the error details."), "err"); return;
+      }
+      await refreshLibrary();
+      var select = el("library-workflows");
+      var listed = Array.prototype.some.call(select.children, function(option){ return option.value === d.data.project_id; });
+      if (listed){
+        S.validationEpoch++; cancelLibraryLoad(); select.value = d.data.project_id;
+        S.librarySelectionPending = S.valid && S.loadedWorkflowId !== d.data.project_id;
+        updateLibraryControls(); updateLibraryGuidance(); updatePrepareControl();
+      }
+      el("project-zip").value = ""; el("project-id").value = "";
+      showMsg("project-import-msg", "Added " + d.data.name + ". " +
+        (d.data.input_zip ? d.data.input_zip.message + " " : "") +
+        "Choose Load your workflow to set it up.",
+        d.data.input_zip && !d.data.input_zip.retained ? "err" : "ok");
+    } catch(e){
+      showMsg("project-import-msg", "We couldn't confirm whether the workflow was added. Refresh the list before trying again.", "err");
+    } finally { S.importBusy = false; updateImportControl(); }
+  }
+  function clearValidated(){
+    S.validationEpoch++;
+    cancelLibraryLoad(); S.loadedWorkflowId = ""; S.librarySelectionPending = false;
+    S.valid = false; S.document = null; S.cartridges = [];
+    syncTools();
+    el("btn-create").disabled = true;
+    el("cartridge-s").classList.add("hidden");
+    el("pkg-doc").textContent = ""; el("pkg-doc").classList.add("hidden");
+    setBadge("pkg-badge", "not loaded", "muted");
+    el("setup-summary").textContent = "Load a workflow to see its steps.";
+    el("setup-workflow").textContent = ""; el("setup-workflow").classList.add("hidden");
+    el("library-msg").classList.add("hidden");
+    updateLibraryControls(); updateLibraryGuidance(); updatePrepareControl();
+    return S.validationEpoch;
+  }
+  function acceptDocument(v, workflowId){
+    // Retain deliberate choices only when rechecking the same workflow content.
+    // This setup cache is separate from persisted runs and their model mapping.
+    var identity = JSON.stringify([v.name || "magazine", v.document]);
+    if (identity !== S.setupIdentity){
+      S.chosenModels = Object.create(null); S.sharedModel = ""; S.modelMode = "independent"; S.unavailableChoice = false;
+      S.toolChoices = Object.create(null);
+    }
+    S.setupIdentity = identity;
+    S.valid = true;
+    S.loadedWorkflowId = workflowId || ""; S.librarySelectionPending = false;
+    S.name = v.name || "magazine";
+    S.schema = v.schema_version;
+    S.document = v.document;
+    S.cartridges = v.cartridges || [];
+    syncTools();
+    setBadge("pkg-badge", "Checked · " + S.cartridges.length + " steps", "ok");
+    el("setup-workflow").textContent = S.name; el("setup-workflow").classList.remove("hidden");
+    showMsg("library-msg",loadedConfirmation(),"ok"); updateLibraryGuidance(); updateLibraryControls();
+    el("pkg-doc").textContent = JSON.stringify(v.document, null, 2);
+    el("pkg-doc").classList.remove("hidden");
+    renderCartridges();
+    el("btn-create").disabled = false;
+    buildModelOptions();
+  }
+  async function selectWorkflow(){
+    var identifier = el("library-workflows").value;
+    if (S.libraryLoad || !canLoadWorkflow(identifier)) return;
+    var request = {identifier:identifier,epoch:++S.validationEpoch,controller:new AbortController()};
+    S.libraryLoad = request; S.librarySelectionPending = true;
+    updateLibraryControls(); updateLibraryGuidance(); updatePrepareControl();
+    showMsg("library-msg", "Loading workflow…");
+    try {
+      var d = await api("/api/magazine/library/" + encodeURIComponent(identifier), "GET", undefined, request.controller);
+      if (S.libraryLoad !== request || request.epoch !== S.validationEpoch || el("library-workflows").value !== identifier) return;
+      if (!d.ok || !d.data.valid){
+        var message = usefulError(d,"Magazine couldn't load this workflow. Try Load your workflow again.");
+        if (!/try|again/i.test(message)) message += " Choose another workflow or try Load your workflow again.";
+        if (S.valid) message += " Your loaded workflow is still " + S.name + ".";
+        showMsg("library-msg",message,"err");
+        return;
+      }
+      acceptDocument(d.data,identifier);
+      el("file").value = ""; el("json").value = "";
+    } catch(e){
+      if (S.libraryLoad === request && request.epoch === S.validationEpoch) showMsg("library-msg",
+        "We couldn't load this workflow. Try Load your workflow again." + (S.valid ? " Your loaded workflow is still " + S.name + "." : ""), "err");
+    } finally {
+      if (S.libraryLoad === request){
+        S.libraryLoad = null;
+        S.librarySelectionPending = S.valid && el("library-workflows").value !== S.loadedWorkflowId;
+        updateLibraryControls(); updateLibraryGuidance(); updatePrepareControl();
+      }
+    }
+  }
+
+  // --- existing upload / pasted JSON validation ---
+  async function validatePackage(){
+    var epoch = clearValidated();
+    var body, d;
+    var f = el("file");
+    var jsonText = el("json").value;
+    var ext = (f.files[0] ? (f.files[0].name.split(".").pop()||"").toLowerCase() : "");
+    el("btn-validate").disabled = true;
+    try {
+      if (f.files[0]){
+        var contents = await readFile(f.files[0], ext === "json");
+        body = { file_name: f.files[0].name, file_data_b64: "",
+                 file_type: (ext==="json" ? "json" : "magazine") };
+        if (ext === "json") body.document_json = contents;
+        else body.file_data_b64 = contents;
+      } else if (jsonText){
+        body = { document_json: jsonText, file_type: "json" };
+      } else {
+        showMsg("pkg-msg", "Upload a .magazine file or paste a JSON document.", "err");
+        return;
+      }
+      d = await api("/api/magazine/packages","POST",body);
+      if (epoch !== S.validationEpoch) return;
+      if (!d.ok || !d.data.valid){
+        showMsg("pkg-msg", usefulError(d,"Magazine couldn't read this workflow. Check the file and try again."), "err");
+        return;
+      }
+      acceptDocument(d.data);
+      showMsg("pkg-msg", "Workflow checked. Choose your AI models below.", "ok");
+    } catch(e){
+      if (epoch === S.validationEpoch) showMsg("pkg-msg", "We couldn't check this workflow. Try again.", "err");
+    } finally { el("btn-validate").disabled = false; }
+  }
+  function renderCartridges(){
+    var c = S.cartridges;
+    el("cartridge-s").classList.remove("hidden");
+    el("cartridges-h").textContent = "Workflow steps — " + c.length;
+    setBadge("cartridge-badge", "in order", "ok");
+    var wrap = el("cartridges"); wrap.innerHTML = "";
+    for (var i=0;i<c.length;i++){
+      var item = c[i];
+      var row = document.createElement("div"); row.className = "cartridge"; row.id="cartridge-"+item.id;
+      var ord = document.createElement("div"); ord.className="ord"; ord.textContent = i+1;
+      var idb = document.createElement("div"); idb.className="id"; idb.textContent = item.id;
+      var cellModel = document.createElement("div"); cellModel.className="cellm"; cellModel.id="model-cell-"+item.id;
+      var mk = document.createElement("label"); mk.className="mk";
+      mk.textContent = "AI model for Step " + (i+1);
+      var sel = document.createElement("select"); sel.id = "model-"+item.id;
+      mk.setAttribute("for", sel.id);
+      sel.dataset.modelKey = item.id;
+      sel.setAttribute("aria-label", "AI model for step " + (i+1) + ": " + item.id);
+      cellModel.appendChild(mk); cellModel.appendChild(sel);
+      var promptEl = document.createElement("div"); promptEl.className="prompt";
+      promptEl.textContent = item.prompt || "";
+      var toolsCell = document.createElement("div"); toolsCell.className="tools";
+      toolsCell.id = "tools-"+item.id;
+      toolsCell.textContent = "run-level (none selected)";
+      row.appendChild(ord); row.appendChild(idb); row.appendChild(cellModel);
+      row.appendChild(promptEl); row.appendChild(toolsCell);
+      wrap.appendChild(row);
+    }
+  }
+  // --- create run ---
+  async function createRun(){
+    if (S.prepareBusy || !S.valid || !S.cartridges.length) return;
+    if (!allModelsSelected()){
+      showMsg("create-msg", S.modelMode === "shared" ? "Choose an AI model for the workflow before continuing." : "Choose an AI model for each step before continuing.", "err"); return;
+    }
+    if (el("btn-create").disabled) return;
+    S.prepareBusy = true;
+    var name = S.name, previousView = view;
+    var body = configuredRun();
+    if (S.loadedWorkflowId) body.project_id = S.loadedWorkflowId;
+    // ownership is set server-side from the authenticated OWUI user (user.id);
+    // it is never sent from the browser.
+    showMsg("create-msg", "Preparing workflow…"); updatePrepareControl();
+    try {
+      var d = await api("/api/magazine/runs","POST",body);
+      if (!d.ok){
+        var explanation = usefulError(d,"Magazine couldn't prepare this workflow. Review the error details and try again.");
+        showMsg("create-msg", explanation, "err");
+        if (explanation === "This AI model isn't available. Choose another to continue.") await loadModels();
+        return;
+      }
+      if (!d.data.run_id || d.data.status !== "READY") throw new Error("Unexpected preparation response");
+      runNames[d.data.run_id] = name;
+      showMsg("create-msg", "Your workflow is ready. Nothing has started.", "ok");
+      if (view === previousView) await selectRun(d.data.run_id, name);
+      else showMsg("create-msg", "Your workflow is ready. Open it in Previous work; nothing has started.", "ok");
+      refreshHistory();
+    } catch(e){
+      showMsg("create-msg", "We couldn't confirm whether the workflow was prepared. Refresh previous work before trying again.", "err");
+      refreshHistory();
+    } finally { S.prepareBusy = false; updatePrepareControl(); }
+  }
+
+  function stateLabel(status){ return {READY:"Ready to start",RUNNING:"Working",COMPLETED:"Finished",HALTED:"Stopped — needs attention"}[status] || "Status unavailable"; }
+  function runPath(v){ return "/api/magazine/runs/" + encodeURIComponent(v.rid); }
+  function cancelView(){
+    if (!view) return;
+    clearTimeout(view.timer);
+    if (view.statusController) view.statusController.abort();
+    if (view.resultsController) view.resultsController.abort();
+  }
+  function active(v){ return view === v; }
+  function updateRunControls(v){
+    if (!active(v)) return;
+    var r = v.state, claim = r && r.execution;
+    var control = r && r.control, stopRequested = control && control.request === "STOP";
+    var claimedReady = r && r.status === "READY" && claim && !claim.halted;
+    var recoverable = r && !stopRequested && (r.status === "HALTED" || claimedReady);
+    el("btn-start").disabled = !r || r.status !== "READY" || v.actionBusy || v.uncertain || !!claimedReady || !v.fresh;
+    el("btn-stop").disabled = !r || !!stopRequested || !(r.status === "RUNNING" || claimedReady) || v.actionBusy || v.uncertain || !v.fresh;
+    el("btn-refresh-run").disabled = v.busy || v.actionBusy;
+    el("btn-recover").disabled = !recoverable || v.actionBusy || v.uncertain || !v.fresh;
+    el("btn-recover").classList[recoverable ? "remove" : "add"]("hidden");
+    el("recovery-note").classList[recoverable ? "remove" : "add"]("hidden");
+    el("recovery-note").textContent = claimedReady ?
+      "Magazine will check whether this workflow can be prepared to continue. It won't start automatically." :
+      "This will prepare the workflow so you can start it again. It won't start automatically.";
+  }
+  function showRun(v){
+    if (!active(v)) return;
+    var r = v.state;
+    el("run-result").classList.remove("hidden"); el("run-result").classList.add("show");
+    el("run-empty").classList.add("hidden");
+    el("run-title").textContent = v.name || "Workflow";
+    el("run-reference").textContent = "Reference: " + v.rid + (r && r.created_at ? " · " + dateLabel(r.created_at) : "");
+    setBadge("run-badge", stateLabel(r && r.status), r && r.status === "HALTED" ? "err" : r && r.status === "COMPLETED" ? "ok" : "muted");
+    var done = r && r.done || [], todo = r && r.todo || [], current = r && r.current_cartridge;
+    var order = done.concat(current && !done.includes(current) ? [current] : []).concat(todo).filter(function(id,i,a){return a.indexOf(id)===i;});
+    var total = order.length;
+    el("run-progress").max = total || 1; el("run-progress").value = done.length;
+    el("run-progress").setAttribute("aria-valuetext", done.length + " of " + total + " steps finished");
+    var control = r && r.control;
+    var message = !r ? "We couldn't confirm this workflow's status. Select Check progress to try again." :
+      control && control.request === "STOP" && control.termination_status !== "CONFIRMED" ?
+        (control.cancellation_status === "FAILED" ? "Stop is saved, but active inference cancellation wasn't confirmed. The current step may finish; no later step will start." : "Stop is saved and will take effect at the next safe boundary.") :
+      control && control.termination_status === "CONFIRMED" ? "The workflow stopped as requested. Finished results were preserved." :
+      r.status === "READY" ? "Your workflow is ready and hasn't started. Select Start workflow when you want to begin." :
+      r.status === "RUNNING" ? (current ? "Magazine is working on step " + (order.indexOf(current)+1) + " of " + total + "." : "Magazine is working.") :
+      r.status === "COMPLETED" ? (done.length === 1 ? "The step is finished. Your result is ready." : "All " + done.length + " steps are finished. Your results are ready.") :
+      r.status === "HALTED" ? "The workflow stopped before finishing. Check what happened before continuing." :
+      "We couldn't read the workflow's status. Check progress or review the run details.";
+    el("run-summary").textContent = message + (r && r.status !== "COMPLETED" ? " " + done.length + " of " + total + " steps finished." : "");
+    var steps = el("run-steps"); steps.innerHTML = "";
+    order.forEach(function(id){
+      var step = document.createElement("li"), isDone = done.includes(id);
+      step.className = isDone ? "finished" : id === current ? "working" : "waiting";
+      step.textContent = id + " — " + (isDone ? "Finished" : id === current ? r.status === "HALTED" ? "Stopped" : "Working" : "Waiting");
+      steps.appendChild(step);
+    });
+    if (r && r.status === "HALTED" && r.execution && r.execution.halt_reason){
+      el("run-summary").textContent += " See Error details for the reason.";
+      el("error-detail").textContent = r.execution.halt_reason;
+      el("error-diagnostics").classList.remove("hidden");
+    }
+    el("run-detail").textContent = JSON.stringify(r, null, 2); updateRunControls(v);
+  }
+  function dateLabel(value){
+    var date = new Date(value);
+    return isNaN(date.getTime()) ? String(value) : date.toLocaleString("en-GB");
+  }
+  async function refreshHistory(){
+    var epoch = ++historyEpoch;
+    el("btn-history-refresh").disabled = true;
+    try {
+      var d = await api("/api/magazine/runs", "GET");
+      if (epoch !== historyEpoch) return;
+      if (!d.ok || !Array.isArray(d.data.runs)){
+        showMsg("history-msg", usefulError(d,"We couldn't load previous work. Refresh the list to try again."), "err"); return;
+      }
+      var select = el("history-runs"), previous = select.value; select.innerHTML = "";
+      d.data.runs.slice().sort(function(a,b){return String(b.created_at||"").localeCompare(String(a.created_at||""));}).forEach(function(r){
+        var option = document.createElement("option"); option.value = r.run_id;
+        option.textContent = (runNames[r.run_id] || "Workflow") + " · " + (r.created_at ? dateLabel(r.created_at) + " · " : "") + r.run_id + " — " + stateLabel(r.status);
+        select.appendChild(option);
+      });
+      select.value = Array.prototype.some.call(select.children,function(o){return o.value===previous;}) ? previous : select.children.length ? select.children[0].value : "";
+      el("btn-history-open").disabled = !select.value;
+      showMsg("history-msg", select.children.length ? "Open previous work to check its progress and results." : "Your previous workflows will appear here.");
+    } catch(e){ if (epoch === historyEpoch) showMsg("history-msg", "We couldn't load previous work. Refresh the list to try again.", "err"); }
+    finally { if (epoch === historyEpoch) el("btn-history-refresh").disabled = false; }
+  }
+  async function selectRun(rid, name){
+    if (!rid) return;
+    cancelView();
+    var v = {rid:rid,name:name || runNames[rid],state:null,busy:false,actionBusy:false,uncertain:false,fresh:false,timer:null,resultsKey:null};
+    view = v;
+    el("control-msg").classList.add("hidden"); el("error-diagnostics").classList.add("hidden");
+    el("saved-results").innerHTML = ""; showMsg("results-msg", "Loading results…"); showRun(v);
+    await checkRun(v, true);
+  }
+  async function loadResults(v, force){
+    var key = JSON.stringify([v.state.revision, v.state.done, v.state.export]);
+    if (!force && key === v.resultsKey) return true;
+    v.resultsController = new AbortController();
+    try {
+      var d = await api(runPath(v) + "/results", "GET", null, v.resultsController);
+      if (!active(v)) return;
+      if (!d.ok || d.data.run_id !== v.rid || !Array.isArray(d.data.done) || !d.data.results || d.data.status === "error"){
+        showMsg("results-msg", usefulError(d,"We couldn't load the results. Select Check progress to try again."), "err"); return false;
+      }
+      var results = el("saved-results"); results.innerHTML = "";
+      d.data.done.forEach(function(id){
+        var card = document.createElement("div"); card.className = "saved-result";
+        var heading = document.createElement("h3"); heading.textContent = id; card.appendChild(heading);
+        var output = d.data.results[id], text = document.createElement("pre"); text.className = "output";
+        text.textContent = typeof output === "string" ? output === "" ? "The saved result is empty." : output : "This step's saved result is unavailable.";
+        card.appendChild(text);
+        if (typeof output === "string"){
+          var copy = document.createElement("button"); copy.textContent = "Copy result";
+          copy.setAttribute("aria-label", "Copy result for " + id);
+          copy.addEventListener("click", async function(){
+            try { await navigator.clipboard.writeText(output); if(active(v)) showMsg("results-msg","Result copied.","ok"); }
+            catch(e){ if(active(v)) showMsg("results-msg","We couldn't copy the result. Select the text and copy it manually.","err"); }
+          }); card.appendChild(copy);
+        }
+        results.appendChild(card);
+      });
+      v.resultsKey = key;
+      showMsg("results-msg", d.data.done.length ? "Saved results, in the order the steps finished." : "No steps have finished yet.");
+      if (d.data.export && d.data.export.status === "FAILED")
+        showMsg("results-msg", d.data.export.message, "err");
+      else if (d.data.export && d.data.export.status === "EXPORTED")
+        showMsg("results-msg", "Saved results. Finished Work ZIP: " + d.data.export.zip);
+      return true;
+    } catch(e){ if (active(v)) showMsg("results-msg", "We couldn't load the results. Select Check progress to try again.", "err"); return false; }
+    finally { v.resultsController = null; }
+  }
+  async function refreshRun(v, force){
+    if (!active(v) || v.busy) return;
+    clearTimeout(v.timer); v.busy = true; updateRunControls(v);
+    v.statusController = new AbortController();
+    var success = false;
+    try {
+      var d = await api(runPath(v), "GET", null, v.statusController);
+      if (!active(v)) return;
+      if (!d.ok || d.data.run_id !== v.rid || !["READY","RUNNING","COMPLETED","HALTED"].includes(d.data.status)){
+        v.fresh = false;
+        showMsg("control-msg", usefulError(d,"We couldn't read the workflow's status. Select Check progress to try again."), "err");
+        showRun(v); return;
+      }
+      var previousStatus = v.state && v.state.status;
+      v.state = d.data; v.fresh = true; success = true; showRun(v);
+      if (previousStatus !== v.state.status && ["COMPLETED","HALTED"].includes(v.state.status)){
+        refreshHistory();
+        if (v.startAccepted){
+          if (v.state.status === "COMPLETED") el("control-msg").classList.add("hidden");
+          else showMsg("control-msg","The workflow stopped. Check what happened before continuing.","err");
+        }
+      }
+      if (!await loadResults(v, force)){
+        success = false;
+        if (active(v) && v.state.status === "RUNNING") showMsg("control-msg", "Automatic checks have paused because results couldn't be loaded. Select Check progress to try again.", "err");
+      }
+    } catch(e){
+      if (active(v)){
+        v.fresh = false;
+        showMsg("control-msg", "The connection was interrupted. The last saved status is shown. Select Check progress to try again.", "err");
+      }
+    } finally {
+      v.busy = false; v.statusController = null;
+      if (active(v)){
+        updateRunControls(v);
+        if (success && v.state.status === "RUNNING" && !v.actionBusy)
+          v.timer = setTimeout(function(){ return checkRun(v, false); }, 2500);
+      }
+    }
+  }
+  async function runAction(kind){
+    var v = view, button = el(kind === "start" ? "btn-start" : "btn-recover");
+    if (!v || v.actionBusy || button.disabled) return;
+    v.actionBusy = true; clearTimeout(v.timer); updateRunControls(v);
+    showMsg("control-msg", kind === "start" ? "Requesting Start…" : "Preparing to continue…");
+    var d = null, uncertain = false;
+    try { d = await api(runPath(v) + "/" + kind, "POST"); }
+    catch(e){ uncertain = true; }
+    if (!active(v)) return;
+    if (d && ((!d.ok && d.code >= 500) || (d.ok && (!d.data ||
+        (kind === "start" ? d.code !== 202 || d.data.status !== "accepted" : d.data.status !== "READY"))))) uncertain = true;
+    v.uncertain = uncertain;
+    if (uncertain) showMsg("control-msg", "We couldn't confirm the response. Checking the saved status; no request will be repeated.", "err");
+    else if (!d.ok) showMsg("control-msg", usefulError(d,kind === "start" ? "Magazine couldn't start this workflow. Check progress and review the error details." : "Magazine couldn't prepare this workflow to continue. Check progress and review the error details."), "err");
+    else {
+      v.startAccepted = kind === "start";
+      showMsg("control-msg", kind === "start" ? "Start accepted. Checking progress…" : "Prepared to continue. Nothing has started.", "ok");
+    }
+    // A status request already in progress cannot be overlapped. Wait for its
+    // bounded completion, then read again so pre-action state is not mistaken
+    // for the result of Start/recovery.
+    if (v.busy){ await v.refreshPromise; }
+    if (!active(v)) return;
+    v.actionBusy = false;
+    await checkRun(v, true);
+    if (!active(v)) return;
+    if (kind === "start" && d && d.ok && (!v.fresh || v.state.status === "READY")){
+      uncertain = true; v.uncertain = true;
+    }
+    if (uncertain){
+      if (v.fresh && v.state.status !== "READY") v.uncertain = false;
+      showMsg("control-msg", "The response was uncertain. " + (v.fresh ? "The saved status is shown below. " : "") + "Select Check progress before trying another action.", "err");
+    }
+    updateRunControls(v); refreshHistory();
+  }
+  async function stopRun(){
+    var v = view, button = el("btn-stop");
+    if (!v || v.actionBusy || button.disabled) return;
+    v.actionBusy = true; clearTimeout(v.timer); updateRunControls(v);
+    showMsg("control-msg", "Saving Stop request…");
+    var d = null;
+    try { d = await api(runPath(v) + "/stop", "POST"); }
+    catch(e){
+      if (active(v)) showMsg("control-msg", "We couldn't confirm the Stop response. Checking the durable status; don't repeat the request yet.", "err");
+    }
+    if (!active(v)) return;
+    if (d && d.ok && d.data && d.data.status === "stopped")
+      showMsg("control-msg", "Workflow stopped. Finished results were preserved.", "ok");
+    else if (d && d.ok && d.data && d.data.status === "stop_requested")
+      showMsg("control-msg", d.data.message || "Stop is saved and will take effect at the next safe boundary.", "ok");
+    else if (d)
+      showMsg("control-msg", usefulError(d,"Magazine couldn't save the Stop request. Check progress before trying again."), "err");
+    if (v.busy) await v.refreshPromise;
+    if (!active(v)) return;
+    v.actionBusy = false;
+    await checkRun(v, true);
+    updateRunControls(v); refreshHistory();
+  }
+  function checkRun(v, force){
+    if (!active(v) || v.busy) return v && v.refreshPromise;
+    v.refreshPromise = refreshRun(v, force); return v.refreshPromise;
+  }
+
+  // --- init ---
+  el("btn-project-import").addEventListener("click", importProject);
+  el("btn-library-refresh").addEventListener("click", refreshLibrary);
+  el("btn-library-select").addEventListener("click", selectWorkflow);
+  el("library-workflows").addEventListener("change", onWorkflowSelection);
+  el("btn-validate").addEventListener("click", validatePackage);
+  el("btn-create").addEventListener("click", createRun);
+  el("btn-tools-select-all").addEventListener("click", function(){selectTools(true);});
+  el("btn-tools-clear-all").addEventListener("click", function(){selectTools(false);});
+  el("btn-start").addEventListener("click", function(){return runAction("start");});
+  el("btn-stop").addEventListener("click", stopRun);
+  el("btn-recover").addEventListener("click", function(){return runAction("recover");});
+  el("btn-refresh-run").addEventListener("click", async function(){
+    var v = view; if (!v || v.busy || v.actionBusy) return;
+    await checkRun(v,true); if(active(v) && v.fresh){
+      v.uncertain=false;updateRunControls(v);
+      showMsg("control-msg","Progress updated.","ok");
+    }
+  });
+  el("btn-history-refresh").addEventListener("click", refreshHistory);
+  el("btn-history-open").addEventListener("click", function(){return selectRun(el("history-runs").value);});
+  el("history-runs").addEventListener("change", function(){el("btn-history-open").disabled=!this.value;});
+  el("json").addEventListener("input", clearValidated);
+  el("file").addEventListener("change", clearValidated);
+  initAppearance(); updateLibraryGuidance(); updatePrepareControl(); refreshLibrary(); refreshHistory();
+  loadModels();
+  loadTools();
+})();
+</script>
+</body>
+</html>
+"""
+
+
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
+def _install_routes(app, library_root=None, open_webui_base_url=None):
+    try:
+        from fastapi import APIRouter, HTTPException, Depends, Request
+        from fastapi.responses import HTMLResponse, JSONResponse
+        from open_webui.utils.auth import get_current_user
+    except Exception:
+        return
+
+    router = APIRouter()
+
+    # Every handler requires OWUI authentication (get_current_user resolves the
+    # bearer token / cookie to a UserModel and raises 401 when absent).
+    auth_user = Depends(get_current_user)
+
+    def configured_library_root():
+        return library_root() if callable(library_root) else (library_root if library_root is not None else _LIBRARY_ROOT_DEFAULT)
+
+    global _STORAGE_LIBRARY_ROOT_GETTER
+    _STORAGE_LIBRARY_ROOT_GETTER = configured_library_root
+
+    def configured_open_webui_base_url():
+        configured = (open_webui_base_url() if callable(open_webui_base_url)
+                      else open_webui_base_url)
+        if configured is None:
+            configured = _default_open_webui_base_url()
+        return _normalize_open_webui_base_url(configured)
+
+    @router.get("/api/magazine/library")
+    def library(user = auth_user):
+        result = _library_list(configured_library_root())
+        result["can_import"] = getattr(user, "role", None) == "admin"
+        return result
+
+    @router.post("/api/magazine/library/import", status_code=201)
+    def import_project(body: _ImportProjectBody, user = auth_user):
+        # Same trusted UserModel.role check as OWUI get_admin_user. Browsing
+        # stays authenticated-user scoped; request fields cannot grant a role.
+        if getattr(user, "role", None) != "admin":
+            raise HTTPException(status_code=403, detail="Administrator access is required to import projects.")
+        try:
+            return _library_import(configured_library_root(), body.file_name, body.file_data_b64, body.project_id)
+        except _LibraryError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=str(exc)) from None
+
+    @router.get("/api/magazine/library/{workflow_id}")
+    def library_preview(workflow_id: str, user = auth_user):
+        try:
+            return _library_preview(configured_library_root(), workflow_id)
+        except _LibraryError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=str(exc)) from None
+
+
+    @router.get("/magazine", response_class=HTMLResponse)
+    async def mag_page(user = auth_user):
+        return _HTML
+
+    @router.get("/api/magazine/models")
+    async def models(user = auth_user):
+        return {"models": await _fetch_models(app, user)}
+
+    @router.get("/api/magazine/tools")
+    async def tools(user = auth_user):
+        return {"tools": await _fetch_tools(app, user)}
+
+    @router.post("/api/magazine/packages")
+    async def validate_package(body: _PackageBody, user = auth_user):
+        try:
+            document, plan, name = _load_package_from_upload(
+                body.file_name, body.file_data_b64, body.file_type, body.document_json)
+            return {
+                "valid": True,
+                "schema_version": document.get("schema_version"),
+                "name": name,
+                "cartridges": _normalize_cartridges(document),
+                "document": document,
+            }
+        except HTTPException:
+            raise
+        except Exception as e:
+            await _debug_note(user, "mag_pkg_validate", {"error": str(e),
+                                                        "file_name": body.file_name,
+                                                        "file_type": body.file_type})
+            raise HTTPException(status_code=400, detail=str(e))
+
+    @router.post("/api/magazine/runs")
+    async def create_run(body: _CreateRunBody, user = auth_user):
+        try:
+            m = _mag()
+            if not m.get("ok"):
+                raise HTTPException(status_code=500, detail=m.get("error", ""))
+            owner_id = str(user.id)
+            magazine_json = body.magazine
+            if not isinstance(magazine_json, str) or not magazine_json.strip():
+                raise HTTPException(status_code=400,
+                                    detail="magazine must be a non-empty JSON string")
+            model_map = body.model_map or {}
+            tool_ids = body.tool_ids or []
+            if not isinstance(model_map, dict):
+                raise HTTPException(status_code=400, detail="model_map must be a JSON object")
+            if not isinstance(tool_ids, list):
+                raise HTTPException(status_code=400, detail="tool_ids must be a JSON array")
+            # 1) Validate the document through the core boundary.
+            document, plan, name = _load_package_from_upload("", "", "json", magazine_json)
+            cartridge_ids = [c["id"] for c in document.get("cartridges", [])]
+            if not cartridge_ids:
+                raise HTTPException(status_code=400,
+                                    detail="magazine must have at least one cartridge")
+            # 2) User-scoped model and tool discovery (no in-process defaults).
+            models = await _fetch_models(app, user)
+            tools = await _fetch_tools(app, user)
+            available_models = sorted(_available_model_ids(models))
+            available_tools = sorted(_available_tool_ids(tools))
+            # 3) Server-side admission validation.
+            errors = _validate_admission(document, model_map, tool_ids,
+                                         available_models, available_tools)
+            if errors:
+                raise HTTPException(status_code=400, detail={
+                    "admission_errors": errors,
+                    "logical_model_keys": sorted(_document_logical_keys(document)),
+                    "available_models": available_models,
+                    "available_tools": available_tools,
+                })
+            # Optional library identity is metadata only, never a worker input.
+            # Preserve all existing permission/admission gates before this check.
+            if body.project_id:
+                try:
+                    project = _library_preview(configured_library_root(), body.project_id)
+                except _LibraryError as error:
+                    raise HTTPException(status_code=error.status_code, detail=str(error)) from None
+                # beta.4's UI already changes job_type to express independent
+                # versus shared model selection. That admitted routing must
+                # remain unchanged; bind identity to ordered IDs/prompts and
+                # every other canonical field, not those configured keys.
+                def project_identity(value):
+                    return {**value, "cartridges": [
+                        {key: item for key, item in cartridge.items() if key != "job_type"}
+                        for cartridge in value.get("cartridges", [])]}
+                if not project.get("valid") or project_identity(project.get("document", {})) != project_identity(document):
+                    raise HTTPException(status_code=409, detail="Selected project changed; reload its preview before preparing.")
+                name = project["name"]
+            # 4) Persist a READY run under DATA_DIR/magazine/runs/<owner_id>/<rid>.
+            rid = uuid.uuid4().hex[:12]
+            base = _run_base(owner_id, rid)
+            os.makedirs(base, exist_ok=True)
+            os.makedirs(_state_dir(owner_id, rid), exist_ok=True)
+            with open(_mag_path(owner_id, rid), "w", encoding="utf-8") as f:
+                f.write(magazine_json)
+            loaded = m["doc"].load_document(_mag_path(owner_id, rid))
+            loaded_cartridge_ids = [c["id"] for c in loaded.document.get("cartridges", [])]
+            if not loaded_cartridge_ids:
+                raise HTTPException(status_code=400,
+                                    detail="magazine must have at least one cartridge")
+            ready = m["state"].new_ready_state(loaded_cartridge_ids)
+            m["ss"].save_run_state(_state_path(owner_id, rid), ready)
+            meta = {"model_map": model_map, "tool_ids": tool_ids,
+                    "owner_id": owner_id, "created_at": _now(),
+                    "name": name, "schema_version": document.get("schema_version")}
+            if body.project_id:
+                meta["project_id"] = body.project_id
+            _save_meta(owner_id, rid, meta)
+            return {
+                "run_id": rid,
+                "status": "READY",
+                "cartridges": loaded_cartridge_ids,
+                "available_models": available_models,
+                "available_tools": available_tools,
+                "model_map": model_map,
+                "tool_ids": tool_ids,
+                "owner_id": owner_id,
+                "created_at": meta["created_at"],
+                "message": "run admitted (READY) and persisted under DATA_DIR",
+            }
+        except HTTPException:
+            raise
+        except Exception as e:
+            await _debug_note(user, "create_run_error", {"error": str(e)})
+            raise HTTPException(status_code=500, detail="internal error creating run")
+
+    @router.get("/api/magazine/runs")
+    async def list_runs(user = auth_user):
+        runs = []
+        owner_id = str(user.id)
+        root = _runs_root()
+        try:
+            owner_dir = os.path.join(root, owner_id)
+            if os.path.isdir(owner_dir):
+                for rid in sorted(os.listdir(owner_dir)):
+                    base = os.path.join(owner_dir, rid)
+                    if not os.path.isdir(base):
+                        continue
+                    payload = _status_payload(owner_id, rid)
+                    if payload is not None:
+                        runs.append(payload)
+        except Exception as e:
+            await _debug_note(user, "list_runs_error", {"error": str(e)})
+        return {"runs": runs, "count": len(runs), "owner_id": owner_id}
+
+    @router.get("/api/magazine/runs/{rid}")
+    async def get_status(rid: str, user = auth_user):
+        owner_id = str(user.id)
+        payload = _status_payload(owner_id, rid)
+        if payload is None:
+            raise HTTPException(status_code=404, detail="run not found")
+        payload["export"] = _export_record(owner_id, rid)
+        return payload
+
+    # Native results: owner-scoped retrieval of the canonical per-cartridge
+    # result data (run state + results/*.txt) for a run.
+    @router.get("/api/magazine/runs/{rid}/results")
+    async def get_results(rid: str, user = auth_user):
+        owner_id = str(user.id)
+        payload = _results_payload(owner_id, rid)
+        if payload is None:
+            raise HTTPException(status_code=404, detail="run not found")
+        payload["export"] = _export_record(owner_id, rid)
+        return payload
+
+    @router.post("/api/magazine/runs/{rid}/export")
+    async def export_run(rid: str, user = auth_user):
+        owner_id = str(user.id)
+        if not _LIBRARY_ID.fullmatch(rid) or not _LIBRARY_ID.fullmatch(owner_id):
+            raise HTTPException(status_code=404, detail="run not found")
+        payload = _status_payload(owner_id, rid)
+        if payload is None:
+            raise HTTPException(status_code=404, detail="run not found")
+        if payload.get("status") not in ("COMPLETED", "HALTED"):
+            raise HTTPException(status_code=409, detail="Only COMPLETED or HALTED runs can be exported.")
+        record = await asyncio.to_thread(_attempt_export, owner_id, rid)
+        return JSONResponse(record, status_code=200 if record["status"] == "EXPORTED" else 503)
+
+    # Execution: start a READY run in-process (independent of the companion
+    # service). Ownership-checked; token extracted in-memory; detached task.
+    @router.post("/api/magazine/runs/{rid}/start", status_code=202)
+    async def start_run(rid: str, api_key = Depends(_get_token),
+                        user = auth_user):
+        # 1) Ownership, auth and state decision (pure, prechecked).  Ownership
+        #    is first: an unowned/missing run yields 404 before any state is
+        #    disclosed.  Auth is second (401 with no usable bearer token).
+        #    Only then is the run status checked (409 when not READY).
+        owner_id = str(user.id)
+        payload = _status_payload(owner_id, rid)
+        # --- Slice 4 lost-runtime interception ---------------------------------
+        # If the run is RUNNING, positively prove its ownership before the
+        # normal precheck.  _lost_runtime_interception returns None (no
+        # interception), "same_runtime" (fall through; the normal precheck then
+        # rejects the double-start with 409), or a response dict (auto-halted
+        # or lock/TOCTOU refusal).
+        intercept = _lost_runtime_interception(payload, owner_id, rid)
+        if intercept is not None and intercept != "same_runtime":
+            return JSONResponse(intercept, status_code=intercept["status_code"])
+        ok, code, detail = _start_precheck(payload, api_key)
+        if not ok:
+            raise HTTPException(status_code=code, detail=detail)
+        # 2) In-memory token for the in-process dispatch (never persisted).
+        # 3) Synchronous durable admission (claim-first ordering) BEFORE any
+        #    background task is created.  The precheck above is only a fast-
+        #    fail; admission is authoritative and holds the run lock across
+        #    claim persistence and READY -> RUNNING, so a second concurrent
+        #    start cannot race it.
+        magazine_path = _mag_path(owner_id, rid)
+        state_dir = _run_base(owner_id, rid)
+        model_map = payload.get("model_map") or {}
+        tool_ids = payload.get("tool_ids") or []
+        # Resolve and validate configuration before the durable admission
+        # transition. A bad callback must leave a READY run untouched.
+        try:
+            base_url = configured_open_webui_base_url()
+        except ValueError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from None
+        m = _mag()
+        try:
+            prepared = m["rp"].prepare_run(
+                magazine_path=magazine_path, state_dir=state_dir,
+                owner_id=owner_id,
+            )
+        except m["ra"].RunAdmissionError as e:
+            # A conflicting or in-flight admission: refuse without starting
+            # any background task.  prepare_run has already released the lock.
+            raise HTTPException(status_code=409, detail=str(e))
+        # 4) Only after the durable claim succeeds, schedule the (dispatch-only)
+        #    background task.
+        dispatch = m["wd"].make_open_webui_dispatch(
+            base_url, api_key, tool_ids=tool_ids
+        )
+        task = asyncio.create_task(
+            _run_bg_dispatch(rid, magazine_path, state_dir, owner_id,
+                             model_map, prepared, dispatch))
+        _TASKS.add(task)
+        key = (owner_id, rid)
+        handle = {"task": task, "dispatch": dispatch, "prepared": prepared}
+        _RUN_HANDLES[key] = handle
+        def _forget(t, run_key=key, expected=handle):
+            _TASKS.discard(t)
+            if _RUN_HANDLES.get(run_key) is expected:
+                _RUN_HANDLES.pop(run_key, None)
+        task.add_done_callback(_forget)
+        return {
+            "run_id": rid,
+            "status": "accepted",
+            "attempt": prepared.attempt,
+            "message": ("run accepted; executing in-process in the background "
+                        "(READY -> RUNNING -> COMPLETED)")
+        }
+
+    @router.post("/api/magazine/runs/{rid}/stop")
+    async def stop_run(rid: str, user = auth_user):
+        """Request durable Stop and attempt owner-scoped active cancellation."""
+        status_code, body = await _stop_run_decision(str(user.id), rid)
+        return JSONResponse(body, status_code=status_code)
+
+    # Operator recovery of HALTED runs or an abandoned READY claim.  Neither
+    # pathway starts execution; the next /start performs explicit admission.
+    @router.post("/api/magazine/runs/{rid}/recover")
+    async def recover_run(rid: str, api_key = Depends(_get_token),
+                          user = auth_user):
+        """Recover HALTED or an extinct owner's READY run (no auto-start).
+
+        HALTED -> READY uses persist_recover_halted.  An eligible READY run
+        stays READY while recover_lost_runtime retires its extinct owner's
+        claim under the same run lock.  Neither action starts a task.
+        """
+        # 200 / 404 / 409 / 500 decided by _recover_run_decision; the route
+        # stays thin (the decision is unit-tested without the FastAPI stack).
+        owner_id = str(user.id)
+        status_code, body = _recover_run_decision(owner_id, rid)
+        return JSONResponse(body, status_code=status_code)
+
+    def _is_mine(route):
+        p = getattr(route, "path", "") or ""
+        return p == "/magazine" or p.startswith("/api/magazine/")
+
+    # Idempotent: remove any existing magazine routes, then insert fresh ones at the front.
+    app.router.routes[:] = [r for r in app.router.routes if not _is_mine(r)]
+    for r in reversed(list(router.routes)):
+        app.router.routes.insert(0, r)
+
+
+# ---------------------------------------------------------------------------
+# Event Function handler.
+# OWUI: load_function_module_by_id returns module.Event() (an INSTANCE).
+# dispatch then does handler = getattr(instance, 'event') -> bound method.
+# So the FIRST param must be `self`, and `__app__` is a named kwarg.
+# ---------------------------------------------------------------------------
+class Event:
+    if BaseModel is not None:
+        class Valves(BaseModel):
+            library_root: str = _LIBRARY_ROOT_DEFAULT
+            open_webui_base_url: str = _default_open_webui_base_url()
+    else:  # Preserve importability in minimal, core-free unit environments.
+        class Valves:
+            library_root = _LIBRARY_ROOT_DEFAULT
+            open_webui_base_url = _default_open_webui_base_url()
+
+    def __init__(self):
+        self.valves = self.Valves()
+        self._library_initialized = False
+
+    async def event(self, __app__=None, **kwargs):
+        if __app__ is None:
+            return
+        _mag()
+        if not self._library_initialized:
+            try:
+                _initialize_library_root(self.valves.library_root)
+            except _LibraryError:
+                # Keep package upload and pasted-JSON operation available when
+                # an optional custom catalogue path is intentionally unmounted.
+                pass
+            finally:
+                self._library_initialized = True
+        _install_routes(
+            __app__,
+            library_root=lambda: self.valves.library_root,
+            open_webui_base_url=lambda: self.valves.open_webui_base_url,
+        )

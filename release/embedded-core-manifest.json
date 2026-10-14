@@ -1,0 +1,152 @@
+{
+  "archive_sha256": "82fbb7b41b00142c9ffbb4fb1266aeddb981c3b5b9cb38dc8bed99fbfdff4dd5",
+  "file_count": 29,
+  "files": [
+    {
+      "path": "magazine/__init__.py",
+      "sha256": "bc7ff7bb2fafe636163c1d1e84e384849bd2940691b3ed844bdd65a326ef690e",
+      "size": 85
+    },
+    {
+      "path": "magazine/async_runner.py",
+      "sha256": "8155f53929647c4918117abad51f9e2f3a9baf67344adb3da2bf7f6fe8195371",
+      "size": 10486
+    },
+    {
+      "path": "magazine/complete.py",
+      "sha256": "07cd12c6f75bb9faafa327bd0c53350304501083631d0fa6ac8f53d2f2184e2b",
+      "size": 5264
+    },
+    {
+      "path": "magazine/document.py",
+      "sha256": "d353e80932946fc15b3f439e0c53284bdb7395ce92f2071633540bb97e1ac3fa",
+      "size": 1888
+    },
+    {
+      "path": "magazine/durability.py",
+      "sha256": "f179bab7b0ebe0061028e662cf2bf8dd21893443e7fddc76eb1aa5337c8a9c32",
+      "size": 9808
+    },
+    {
+      "path": "magazine/entrypoint.py",
+      "sha256": "973197af7c26a253b07b1ff128b851c577dec2a963f82b5712dc79e568a3d696",
+      "size": 4690
+    },
+    {
+      "path": "magazine/execute.py",
+      "sha256": "a046b6f75faca63ee6f5c2de99acbaaed8959503f52e5acf3a3ded9f4811acd8",
+      "size": 1984
+    },
+    {
+      "path": "magazine/execution_meta.py",
+      "sha256": "c64da1a2df226b00c0bf8cf1f59fe8c229821eaacabd9a69d429e6785d2623ed",
+      "size": 13668
+    },
+    {
+      "path": "magazine/orchestration.py",
+      "sha256": "1ac5dfb5da24da10f7b2cc30f9e7262468a57593e7ffd6180b6031b2ff703d32",
+      "size": 5847
+    },
+    {
+      "path": "magazine/package.py",
+      "sha256": "aceb8886ae23de420432803900f34100a482501a2dd9317886b5ca7dd49c5f41",
+      "size": 14268
+    },
+    {
+      "path": "magazine/paths.py",
+      "sha256": "22da47b3757b8843313e6ee299d1b05e4294699e8144598380fc5a3406be752c",
+      "size": 1933
+    },
+    {
+      "path": "magazine/recovery.py",
+      "sha256": "73547271f2b1f1cbd19e52a3dd7fa56e6addfba2d9f183937ee8663a9b28cec9",
+      "size": 2547
+    },
+    {
+      "path": "magazine/recovery_action.py",
+      "sha256": "36d1832fd63057609f957a8509a76d1920f525f14953e24d1ce7cbffcfe8f3b3",
+      "size": 33143
+    },
+    {
+      "path": "magazine/recovery_transition.py",
+      "sha256": "d70c5e06ceb331c36e04091f7762ae7fa1ca6774e3ddc0de9474b35936c4aacc",
+      "size": 7195
+    },
+    {
+      "path": "magazine/result_store.py",
+      "sha256": "74f383517c4ecb6bacd13d9ec405cba739236b08739f9fb4ab147eff3ae40003",
+      "size": 13689
+    },
+    {
+      "path": "magazine/routing.py",
+      "sha256": "0653568badaedc9141a773b79d32fa218f9afd9340492dddfca2d79e27ecf16c",
+      "size": 719
+    },
+    {
+      "path": "magazine/run_action.py",
+      "sha256": "7068b21538464bc80d0d78b0518f7a7a6e9e9fa19847423eb43cb806175092dd",
+      "size": 26388
+    },
+    {
+      "path": "magazine/run_control.py",
+      "sha256": "7df6361dff9743590c1987f6b3027f45e56cae59aec3006d69f425becf608493",
+      "size": 11099
+    },
+    {
+      "path": "magazine/run_lock.py",
+      "sha256": "3c3c693953f0f031be37e3df735dbd8058d5de0827ddf8def6166eacea65a648",
+      "size": 13531
+    },
+    {
+      "path": "magazine/run_loop.py",
+      "sha256": "e7ce02b6e7feb4fab95c52ab9f307458d4655145916ce27fd4ad7538cc6abde1",
+      "size": 2368
+    },
+    {
+      "path": "magazine/run_preparation.py",
+      "sha256": "a6f61158dd09eb12126c2bc2a0702f9d88437d420942d585b9f41d9aae32161a",
+      "size": 6529
+    },
+    {
+      "path": "magazine/run_transition.py",
+      "sha256": "e5c27cf753c53ec4c8d76b0c243fd03c0ebc6b330c1213c47fc7104724715ed3",
+      "size": 6570
+    },
+    {
+      "path": "magazine/runtime_dispatch.py",
+      "sha256": "b6ce34cd09d424d804947308fba0f128201ea985d6a3ce8e791ce10bd2570ab6",
+      "size": 1457
+    },
+    {
+      "path": "magazine/runtime_identity.py",
+      "sha256": "d2611d2cfff129c453e10aa4fdae45a781f9525d39a4870e6879e87eb0d9a8be",
+      "size": 9104
+    },
+    {
+      "path": "magazine/schema.py",
+      "sha256": "45b407ab575780ead6cbf363f58f3a9dd66a9d41569702ff3e0256cd65caee59",
+      "size": 7068
+    },
+    {
+      "path": "magazine/startup_inspection.py",
+      "sha256": "77078f80c92efad5e5c45e03253146a11da5324d53fd6bb1bdc12ece9331d1ba",
+      "size": 1546
+    },
+    {
+      "path": "magazine/state.py",
+      "sha256": "2c56c1f269beed4a023cba369bac414e321eaf29d868626498ce198a9a7222fa",
+      "size": 8913
+    },
+    {
+      "path": "magazine/state_store.py",
+      "sha256": "5b3d268dcfa8b327b25c4f53deacfd5f8e5672bf8550afc9e41aa9306dc9c3fb",
+      "size": 2426
+    },
+    {
+      "path": "magazine/webui_dispatch.py",
+      "sha256": "9869165601e93296caf3573ddc885afa9f7bd2f8dd918489a16443078aa24466",
+      "size": 24423
+    }
+  ],
+  "format": 1
+}

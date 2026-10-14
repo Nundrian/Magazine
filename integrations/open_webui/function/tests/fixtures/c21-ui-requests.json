@@ -1,0 +1,37 @@
+{
+  "source_sha256": "25f7dfe94afc0a7c9ae343d80a3c2952cda9df31e54da11593617b7f125cd692",
+  "validated_document": {
+    "schema_version": "1.0",
+    "cartridges": [
+      {
+        "id": "first",
+        "job_type": "acceptance",
+        "prompt": "Reply with exactly ZIP_PROJECT_FIRST\n"
+      },
+      {
+        "id": "second",
+        "job_type": "acceptance",
+        "prompt": "Reply with exactly ZIP_PROJECT_SECOND\n"
+      }
+    ]
+  },
+  "requests": {
+    "independent": {
+      "magazine": "{\"schema_version\":\"1.0\",\"cartridges\":[{\"id\":\"first\",\"job_type\":\"first\",\"prompt\":\"Reply with exactly ZIP_PROJECT_FIRST\\n\"},{\"id\":\"second\",\"job_type\":\"second\",\"prompt\":\"Reply with exactly ZIP_PROJECT_SECOND\\n\"}]}",
+      "model_map": {
+        "first": "mock-first",
+        "second": "mock-second"
+      },
+      "tool_ids": [],
+      "project_id": "Smoke"
+    },
+    "shared": {
+      "magazine": "{\"schema_version\":\"1.0\",\"cartridges\":[{\"id\":\"first\",\"job_type\":\"acceptance\",\"prompt\":\"Reply with exactly ZIP_PROJECT_FIRST\\n\"},{\"id\":\"second\",\"job_type\":\"acceptance\",\"prompt\":\"Reply with exactly ZIP_PROJECT_SECOND\\n\"}]}",
+      "model_map": {
+        "acceptance": "mock-first"
+      },
+      "tool_ids": [],
+      "project_id": "Smoke"
+    }
+  }
+}

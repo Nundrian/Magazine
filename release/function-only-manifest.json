@@ -1,0 +1,73 @@
+{
+  "schema_version": "1.0",
+  "release": "Magazine-0.1.0-beta.5-FunctionOnly",
+  "supported_open_webui": "0.11.3",
+  "pins": {
+    "embedded_core_sha256": "82fbb7b41b00142c9ffbb4fb1266aeddb981c3b5b9cb38dc8bed99fbfdff4dd5",
+    "function_source_sha256": "25f7dfe94afc0a7c9ae343d80a3c2952cda9df31e54da11593617b7f125cd692",
+    "function_export_sha256": "f3f8a1c6910e0e2905316b28820b194e94253cb86d6d4c90947e9b6ce88830d0"
+  },
+  "include": [
+    ".gitignore",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md",
+    "pyproject.toml",
+    "requirements-test.txt",
+    "docs/*.md",
+    "docs/images/**/*",
+    "docs/screenshots/**/*",
+    "examples/simple/**/*",
+    "magazine/**/*.py",
+    "tests/**/*.py",
+    "integrations/open_webui/function/README.md",
+    "integrations/open_webui/function/magazine_ef.py",
+    "integrations/open_webui/function/magazine-function.json",
+    "integrations/open_webui/function/tests/**/*",
+    "release/embedded-core-manifest.json",
+    "scripts/*.py",
+    "release/function-only-manifest.json"
+  ],
+  "exclude": [
+    ".git/**",
+    ".build/**",
+    ".release-venv/**",
+    ".uv-cache/**",
+    ".pytest_cache/**",
+    "**/__pycache__/**",
+    "**/*.pyc",
+    "dist/**",
+    "build/**",
+    "*.egg-info/**",
+    ".env",
+    ".env.*",
+    "**/*.pem",
+    "**/*.key",
+    "**/deploy.py",
+    "fm1-running-state-acceptance-evidence/**",
+    "evidence/**",
+    "deployment-backups/**",
+    "histories/**",
+    "private-backups/**",
+    "review_*.py",
+    "record_checks.py",
+    "prepare_candidate.py",
+    "refresh_manifests.py",
+    "finalize_candidate.py"
+  ],
+  "excluded_categories": [
+    "credentials and local environment files",
+    "deployment backups and live exports",
+    "saved chat and workflow histories",
+    "development caches, virtual environments and build trees",
+    "FM-1 historical acceptance evidence",
+    "destructive deployment scripts, including deploy.py"
+  ],
+  "required": [
+    "docs/SECURITY.md",
+    "docs/FUNCTION_INSTALL.md",
+    "release/function-only-manifest.json"
+  ],
+  "distribution": "Native Function and Magazine source only; no Open WebUI or third-party binary/source distribution",
+  "distribution_kind": "function-only"
+}

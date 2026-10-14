@@ -1,0 +1,81 @@
+{
+  "source_sha256": "25f7dfe94afc0a7c9ae343d80a3c2952cda9df31e54da11593617b7f125cd692",
+  "validated_document": {
+    "schema_version": "1.0",
+    "cartridges": [
+      {
+        "id": "first",
+        "job_type": "research",
+        "prompt": "FIRST <script>prompt</script>"
+      },
+      {
+        "id": "second",
+        "job_type": "research",
+        "prompt": "SECOND prompt"
+      }
+    ]
+  },
+  "tools": [
+    {
+      "id": "tool-a",
+      "name": "A descriptive tool name"
+    },
+    {
+      "id": "tool-b",
+      "name": "LongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbrokenLongUnbroken"
+    },
+    {
+      "id": "tool-c",
+      "name": "Third tool"
+    }
+  ],
+  "requests": {
+    "default": {
+      "magazine": "{\"schema_version\":\"1.0\",\"cartridges\":[{\"id\":\"first\",\"job_type\":\"first\",\"prompt\":\"FIRST <script>prompt</script>\"},{\"id\":\"second\",\"job_type\":\"second\",\"prompt\":\"SECOND prompt\"}]}",
+      "model_map": {
+        "first": "mock-first",
+        "second": "mock-second"
+      },
+      "tool_ids": [
+        "tool-a",
+        "tool-b",
+        "tool-c"
+      ],
+      "project_id": "Demo"
+    },
+    "excluded": {
+      "magazine": "{\"schema_version\":\"1.0\",\"cartridges\":[{\"id\":\"first\",\"job_type\":\"first\",\"prompt\":\"FIRST <script>prompt</script>\"},{\"id\":\"second\",\"job_type\":\"second\",\"prompt\":\"SECOND prompt\"}]}",
+      "model_map": {
+        "first": "mock-first",
+        "second": "mock-second"
+      },
+      "tool_ids": [
+        "tool-a",
+        "tool-c"
+      ],
+      "project_id": "Demo"
+    },
+    "cleared": {
+      "magazine": "{\"schema_version\":\"1.0\",\"cartridges\":[{\"id\":\"first\",\"job_type\":\"first\",\"prompt\":\"FIRST <script>prompt</script>\"},{\"id\":\"second\",\"job_type\":\"second\",\"prompt\":\"SECOND prompt\"}]}",
+      "model_map": {
+        "first": "mock-first",
+        "second": "mock-second"
+      },
+      "tool_ids": [],
+      "project_id": "Demo"
+    },
+    "reselected": {
+      "magazine": "{\"schema_version\":\"1.0\",\"cartridges\":[{\"id\":\"first\",\"job_type\":\"first\",\"prompt\":\"FIRST <script>prompt</script>\"},{\"id\":\"second\",\"job_type\":\"second\",\"prompt\":\"SECOND prompt\"}]}",
+      "model_map": {
+        "first": "mock-first",
+        "second": "mock-second"
+      },
+      "tool_ids": [
+        "tool-a",
+        "tool-b",
+        "tool-c"
+      ],
+      "project_id": "Demo"
+    }
+  }
+}

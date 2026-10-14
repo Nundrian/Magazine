@@ -1,0 +1,9 @@
+schema_version: "1.0"
+name: Simple workflow
+cartridges:
+  - id: first
+    model: concise
+    prompt_file: cartridges/first.md
+  - id: second
+    model: reasoning
+    prompt_file: cartridges/second.md

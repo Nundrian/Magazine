@@ -1,0 +1,67 @@
+diff --git a/src/lib/components/layout/Sidebar.svelte b/src/lib/components/layout/Sidebar.svelte
+index 007df31..75b009e 100644
+--- a/src/lib/components/layout/Sidebar.svelte
++++ b/src/lib/components/layout/Sidebar.svelte
+@@ -90,6 +90,7 @@
+ 	import Dropdown from '../common/Dropdown.svelte';
+ 	import DropdownMenu from '../common/DropdownMenu.svelte';
+ 	import CheckIcon from '../icons/Check.svelte';
++	import BookOpenIcon from '../icons/BookOpen.svelte';
+ 	import MoreHorizontalIcon from './Sidebar/icons/MoreHorizontal.svelte';
+ 	import MobileSwipePanel from '../common/MobileSwipePanel.svelte';
+ 
+@@ -1025,6 +1026,27 @@
+ 						</Tooltip>
+ 					</div>
+ 
++					<div>
++						<Tooltip content="Magazine" placement="right">
++							<a
++								id="sidebar-magazine-button-collapsed"
++								class="cursor-pointer flex size-8 items-center justify-center transition group"
++								href="/magazine"
++								target="_blank"
++								rel="noopener noreferrer"
++								on:click|stopPropagation
++								draggable="false"
++								aria-label="Magazine"
++							>
++								<div
++									class="self-center flex size-[calc(30px*var(--app-text-scale,1))] items-center justify-center rounded-lg transition group-hover:bg-gray-100 dark:group-hover:bg-gray-900"
++								>
++									<BookOpenIcon className="size-4" strokeWidth="1.5" />
++								</div>
++							</a>
++						</Tooltip>
++					</div>
++
+ 					{#each pinnedItems as itemId (itemId)}
+ 						{@const meta = getMenuItemMeta(itemId)}
+ 						{#if meta && isMenuItemVisible(itemId)}
+@@ -1250,6 +1272,26 @@
+ 							</button>
+ 						</div>
+ 
++						<div class="px-1 flex justify-center text-gray-700 dark:text-gray-300">
++							<a
++								id="sidebar-magazine-button"
++								class="group grow flex items-center space-x-2 rounded-xl px-2 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-900 transition outline-none"
++								href="/magazine"
++								target="_blank"
++								rel="noopener noreferrer"
++								draggable="false"
++								aria-label="Magazine"
++							>
++								<div class="self-center flex size-4 shrink-0 items-center justify-center">
++									<BookOpenIcon className="size-4" strokeWidth="1.5" />
++								</div>
++
++								<div class="flex flex-1 self-center translate-y-[0.5px]">
++									<div class="self-center text-[0.8125rem] leading-5">Magazine</div>
++								</div>
++							</a>
++						</div>
++
+ 						<div id="pinned-menu-items-list">
+ 							{#each pinnedItems as itemId (itemId)}
+ 								{@const meta = getMenuItemMeta(itemId)}

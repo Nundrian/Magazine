@@ -1,108 +1,213 @@
 # Magazine
 
-**Reliable LLM workflows, one task at a time.**
+**v0.1.0-beta.5 — Beta / Proof of Concept**
 
-Magazine is a **model-independent, sequential workflow runner** for organising and executing multi-stage work with large language models (LLMs). It separates the management of a workflow from the AI models carrying out its individual tasks.
+![Beta version](https://img.shields.io/badge/version-0.1.0--beta.5-blue)
+[![MIT licence](https://img.shields.io/badge/licence-MIT-green)](LICENSE)
 
-> **Project status:** Live end-to-end execution demonstrated in a development environment; the public repository is currently a project overview, **not an installable release**.
+Magazine executes prewritten tasks called *cartridges* through language models
+in **Open WebUI**. Each runs in a fresh temporary conversation. Magazine saves the result
+before moving on to the next cartridge.
 
-## Why Magazine exists
+I built Magazine to investigate whether smaller, locally hosted language models
+can undertake more complicated work when it's divided into manageable tasks.
+A long agentic prompt may ask a model to solve a problem while managing the
+overall plan and extensive instructions. That can be a lot to handle at once.
 
-A complicated request sent to an LLM as one long prompt can become difficult to control, inspect and repeat. Instructions can be lost, the model can drift from the task, and it can be unclear which stage succeeded or failed.
+Magazine keeps control of the sequence outside the model. A human or a more
+capable model writes the bounded tasks; Magazine executes them using your
+assigned models. The worker can concentrate on one task rather than the project.
 
-Magazine takes a different approach: **define the work as a sequence of bounded tasks, then let Magazine manage the process while selected models do the work.**
+This doesn't make the model more intelligent. The approach may also suit larger
+models, but no comparative benchmark establishes performance improvements for
+either. Magazine is an execution system, not an automatic planner: good prompts
+and sensible task decomposition still matter.
 
-## What Magazine is designed to do
+Magazine is still a beta prototype. The current version demonstrates the core
+approach, and additional features are planned as development continues.
 
-- **Validate workflows before execution.** Check the structure and required fields of submitted `.magazine` workflows, and prevent invalid tasks from being dispatched.
-- **Organise work into cartridges.** A cartridge defines one bounded task. The package format uses `id`, `model` and `prompt_file`; the legacy JSON format uses `id`, `job_type` and `prompt`.
-- **Execute work in a controlled sequence.** Keep task order and workflow progression under the runner's control, rather than relying on an LLM to manage its own orchestration.
-- **Route tasks to selected models.** Resolve the requested model to an available model at execution time, while preserving the cartridge's task instructions.
-- **Track execution state.** Maintain durable records of workflow preparation, progress and outcomes so a run can be inspected and failures can be diagnosed.
-- **Preserve results.** Store each completed task's output durably for retrieval and inspection. Automatic passing of one cartridge's output to the next is outside Magazine's initial scope.
-- **Support different model providers.** Keep the core workflow logic independent of any one LLM. The initial integration target is Open WebUI.
+## How it works
 
-## The basic idea
-
-```text
-User submits a .magazine workflow
-                |
-                v
-      Validate the cartridges
-                |
-                v
-       Prepare and preview
-                |
-                v
-    Resolve each task's model
-                |
-                v
-     Execute tasks in sequence
-                |
-                v
-     Record status and results
+```mermaid
+flowchart LR
+    task["Larger task"] --> author["Human or capable model<br/>writes bounded prompts"]
+    author --> first
+    subgraph runner["Magazine: sequential execution"]
+        first["Cartridge 1<br/>Assigned model"] --> second["Cartridge 2<br/>Assigned model"]
+        second --> third["Cartridge 3<br/>Assigned model"]
+    end
 ```
 
-Magazine controls **what runs, in what order and under what conditions**. The selected LLM is responsible for completing the content of each assigned task.
+Each cartridge runs in a fresh Open WebUI conversation without inherited
+parent conversation history. Magazine attempts to remove the temporary chat
+after preserving its result. The arrows show execution order, **not** output
+being passed from one cartridge into the next.
 
-## Architecture
+Choose one available model for the workflow or assign models to individual
+cartridges. Selected tools are passed through Open WebUI at run level, subject
+to its permissions and the model's capabilities. Magazine doesn't provision
+tools or grant additional access.
 
-Magazine is deliberately focused on **reliable workflow execution**, not on becoming an all-purpose AI agent platform.
+The interface separates preparation from execution. You import and validate a
+package, review its prompts, choose models and tools, then prepare a **READY**
+run. Nothing starts until you choose **Start workflow**.
 
-Its principal parts are:
+```mermaid
+flowchart TD
+    importZip["Import workflow ZIP"] --> validate["Validate package"]
+    validate --> prepare["Prepare models and tools<br/>READY: not yet running"]
+    prepare -->|Start workflow| execute["Execute cartridge"]
+    execute --> preserve["Preserve completed result"]
+    preserve -->|More cartridges| execute
+    preserve -->|Run COMPLETED| exportFiles["Export text, manifest and ZIP"]
+    execute -->|Failure or applied Stop| halted["HALTED<br/>Keep completed results"]
+    halted -.->|Explicit owner export request| exportFiles
+```
 
-- **Magazine core:** the canonical workflow validation and orchestration logic.
-- **Host runner:** the integration layer that accepts workflows, performs the necessary access and model checks, and invokes the core. Open WebUI is the initial host.
-- **Cartridges:** individual, bounded units of work that the core can validate and dispatch.
+Results are saved before the next cartridge starts. **COMPLETED** means the
+workflow finished executing and its responses were saved; it does not mean
+those responses are factually correct or that the real-world task succeeded.
+You'll still need to review the work and run any relevant external checks.
 
-## Intended uses
+## Interface overview
 
-Magazine is intended for jobs that benefit from a dependable sequence of distinct LLM tasks, including:
+Magazine's interface brings workflow import, model setup, execution and previous results into one place. The labels below highlight the main controls. Model choices become available after loading a workflow.
 
-- Research processes with separate collection, analysis and reporting stages.
-- Multi-stage writing, editing and quality review.
-- Structured software inspection, implementation and testing workflows.
-- Repeatable technical or analytical tasks where execution history matters.
+![Annotated guide to the Magazine beta interface](docs/screenshots/magazine-interface-annotated.png)
 
-These are **intended applications**, not claims that packaged workflows for each use case are already available.
+*Annotated illustration based on the beta.5 interface. [View the unannotated screenshot](docs/screenshots/magazine-interface-original.png).*
 
-## Community research question: can free-tier AI plan for smaller local models?
+## A practical example
 
-Magazine's broader motivation is to help **smaller, locally run LLMs tackle jobs too large or complex to handle reliably in one prompt**. A more capable hosted model could plan the overall job and prepare suitably bounded cartridges; Magazine would then manage their sequential execution by a local model. The quality of the initial decomposition matters, and Magazine itself does **not** automatically generate those plans or cartridges.
+Suppose you want to review a small Python function before using it in a project.
+Instead of asking for a broad review in one prompt, you could write these
+cartridges, including the same source excerpt in each:
 
-An open question for the community is whether **free or already-included consumer AI access** is good enough for this planning stage. Candidates to investigate include ChatGPT, Claude, Gemini, Microsoft Copilot (including relevant Microsoft 365 offerings), Meta AI and Grok. Their free access, underlying models, limits and policies may change; none is endorsed or verified here for cartridge generation. A free chat interface should not be confused with free automated API access: preparation and import may be manual.
+| Cartridge | Bounded task |
+| --- | --- |
+| Input handling | Identify accepted inputs and cases that could produce unexpected behaviour. Refer to specific lines. |
+| Error handling | Inspect the function's failure paths. Explain whether errors are handled or left to the caller. |
+| Test preparation | Suggest concrete test cases for the supplied function, including edge cases. Don't claim to have executed them. |
 
-If you try this, reports are welcome, including the planning service and model (where known), date/tier, original objective, number and scope of cartridges, the local execution model and hardware, completed results, failures and human intervention required. Reproducible, privacy-safe examples and unsuccessful runs are as valuable as successful ones. **The project maintainer is not claiming to have benchmarked these services.**
+Read these independent inspections together; the third cartridge doesn't
+receive the first two answers. Magazine doesn't load your repository into
+the prompts for you.
 
-ASTER is a **separate, optional prompt-design workflow** that may help with task fidelity, distributed anchoring and context control; it is not required by Magazine or embedded in its runtime.
+The [two-cartridge example](examples/simple/magazine.yaml) uses a fixed-reply
+prompt and an independent arithmetic question to check execution and routing,
+not answer correctness. Keep `magazine.yaml` at the root of a workflow ZIP,
+alongside its referenced prompts.
 
-## Development status
+## Install the Open WebUI Function
 
-Magazine's core and native Open WebUI runner have passed local regressions and live development-environment acceptance tests, including sequential model execution, durable results retrieval, in-process reload fencing and lost-runtime recovery. **This does not establish a packaged public release or production readiness.**
+Use the **Function-only integration** with **Open WebUI 0.11.3**. Other versions
+haven't been accepted. You'll need administrator access, authentication enabled,
+persistent data storage and a working model through your existing Open WebUI
+connections, such as Ollama or an OpenAI-compatible provider.
 
-### Recorded test milestones (2–8 October 2026)
+1. Back up your data and any existing Magazine Function. Review the
+   [source](integrations/open_webui/function/magazine_ef.py): Functions execute
+   Python with server privileges.
+2. Download and extract the [beta.5 Function-only package](downloads/Magazine-0.1.0-beta.5-FunctionOnly.zip).
+3. Open **Admin Panel → Functions → Create menu → Import JSON**. Import
+   `integrations/open_webui/function/magazine-function.json` and enable **Magazine**.
+4. Visit `/magazine` on your Open WebUI server, for example
+   `http://localhost:3000/magazine`, and bookmark it.
 
-These findings are documented in the supplied project's development reports and test artefacts; they have **not been independently rerun in this introductory repository**.
+Installation starts no workflows and adds no permanent sidebar button.
+Keep your existing Open WebUI image. The [installation guide](docs/FUNCTION_INSTALL.md)
+covers updates, backup, rollback and removal.
 
-- **Core regression:** **560/560 tests passed** on the canonical core at commit `381b361` (8 October), including workflow, state, execution and recovery behaviour.
-- **Native runner regression:** **45/45 tests passed** at runner commit `f663e0a` (8 October), covering native Open WebUI integration and execution/recovery cases.
-- **Embedded-code integrity:** **28/28 Python source files** in the runner's embedded Magazine core matched the canonical source; the deployed Event Function also matched the committed runner by SHA-256.
-- **Authenticated preparation:** Live Open WebUI checks demonstrated workflow validation, cartridge preview, user-scoped ownership, model/tool admission and durable creation of `READY` runs.
-- **Native end-to-end execution:** A live **two-cartridge** Bonsai 2 27B run progressed `READY → RUNNING → COMPLETED` and returned the expected results (`MAGAZINE_FIRST_OK` and `323`) through the results API.
-- **Sequential isolation and cleanup:** A separate live **three-cartridge** audit completed in order with distinct model chats, three persisted results and no newly created chats left behind.
-- **Tool forwarding:** A live audit recorded forwarding of the `development_toolkit` selection and a tool call, but **did not verify the intended on-disk command marker**; full external side-effect success was not established.
-- **FM-1 reload fencing:** A live in-process Event Function reload preserved runtime identity and ownership, with no stale writes; a second start was rejected with HTTP **409** after the run had already completed.
-- **FM-2 lost-runtime recovery:** Following a genuine Open WebUI process replacement, a lost-owner run halted safely, was recovered explicitly and ultimately completed all three long cartridges over subsequent attempts, with stale-owner writes fenced off.
+![Magazine interface during local beta.4 testing](docs/images/magazine-interface-beta4.png)
 
-The immediate priorities are:
+*Magazine interface during local beta.4 testing. The Function-only installation opens at `/magazine` without adding a sidebar button.*
 
-1. Consolidate the verified development code and deployment procedure into a reproducible release.
-2. Test installation, authentication, recovery and error handling across supported environments.
-3. Resolve known model/tool compatibility limitations and improve operational diagnostics.
-4. Publish installation, configuration and usage instructions once release acceptance is complete.
+## Everyday use
 
-**No source code or installation procedure is provided in this introductory repository yet.** Future capabilities such as multi-agent coordination, worker pools or multi-Magazine orchestration are not part of the initial release claim.
+Check that your account can use the model in an ordinary Open WebUI chat.
+An administrator imports a ZIP into the shared library. Choose **Load your
+workflow**, review its cartridges and select models and tools.
 
-## Licence
+Choose **Prepare workflow**, inspect the READY run, then choose **Start workflow**.
+**Check progress** shows status and responses; **View previous work** opens
+earlier runs without restarting them.
 
-MIT. See [LICENSE](LICENSE). This licence applies to the material currently published in this repository; the canonical Magazine core and runner implementations are not yet included. Their release and third-party dependencies must be reviewed before publication.
+**Stop workflow** preserves completed results and prevents later cartridges
+from starting once Stop takes effect. If active inference cancellation can't
+be confirmed, the current cartridge may finish before the workflow stops at
+the next safe boundary. If the final cartridge finishes first, the run may
+remain COMPLETED. An eligible failure-halted run can be prepared to
+continue through explicit recovery, which does not itself start execution.
+A run with a durable Stop request cannot use that recovery path; Stop is not
+Pause/Resume. See [STOP and recovery behaviour](docs/STOP.md).
+
+
+## Input ZIPs and Finished Work
+
+Beta.5 separates original packages from finished outputs:
+
+- **Input-ZIPs** retains an exact copy of a successfully imported workflow ZIP.
+  Placing other ZIPs in that folder doesn't import them.
+- **Finished-Work** contains saved cartridge text, a machine-readable manifest
+  and `results.zip`, organised by owner, project and run. COMPLETED runs export
+  automatically; HALTED runs' completed portions require an explicit owner request.
+
+Defaults are `DATA_DIR/magazine/input-zips/` and `DATA_DIR/magazine/finished-work/`.
+Optional Docker bind mounts expose host folders, such as
+`C:\AI_Workflows\Magazine\Input-ZIPs` and `C:\AI_Workflows\Magazine\Finished-Work`.
+The server-side settings are `MAGAZINE_INPUT_ZIPS_DIR` and
+`MAGAZINE_FINISHED_WORK_DIR`.
+
+Read responses in Magazine or open the ZIP in Finished Work. Internal history
+and recovery records stay in `DATA_DIR/magazine/runs/`. Export retries don't
+overwrite unrelated work; storage failures are reported without discarding
+canonical results. [Storage setup](docs/STORAGE.md) covers Windows/Linux mounts,
+retrieval, permissions and backups. Retain the existing data volume and
+deployment settings when adding mounts.
+
+## Testing and evidence
+
+The beta.5 acceptance evidence records **989 passing regression tests**:
+611 core, 244 Function and 134 interface/sidebar cases. They cover execution
+and state, sequential routing, STOP/recovery, user ownership, persistence,
+ZIP validation/retention and Finished Work exports.
+
+Separate beta.5 checks verified packaged installation, authentication and
+restart persistence on isolated stock Open WebUI 0.11.3. Windows Docker
+bind-mount tests ran two sequential cartridges through the real core with
+deterministic injected responses, not live inference. Release archives were
+checked for reproducibility and source parity.
+
+Real Bonsai inference/STOP and browser testing belong to the retained beta.4
+baseline; they weren't rerun as beta.5 live tests. The [testing summary](docs/TESTING.md) and [acceptance report](docs/ACCEPTANCE.md) distinguish these results and their limits. [Validation](docs/VALIDATION.md) explains how to run the source checks.
+
+## Current limitations
+
+- Prompts must be self-contained. Earlier results aren't automatically injected
+  into later cartridges; there is no automatic planning, repair or model substitution.
+- The tested deployment is a single Linux backend, including Docker Desktop
+  on Windows. Multi-worker/Redis deployments and proxy path prefixes aren't accepted.
+- Finished Work exports only the canonical cartridge text Magazine possesses,
+  not separate Development Toolkit files or reconstructed chat archives.
+- A backend interruption can leave export work incomplete. The documented
+  retry/manual-inspection process is separate from execution recovery; no
+  automatic resume or historical ZIP backfill is performed.
+
+For a more detailed explanation, see [current limitations](docs/LIMITATIONS.md).
+
+## Security, licence and repository guide
+
+Use trusted packages and review tool permissions. Magazine doesn't patch or
+certify your Open WebUI host's security. Read the
+[security notes](docs/SECURITY.md) before using it with untrusted inputs.
+
+Magazine uses the [MIT licence](LICENSE); Open WebUI and its dependencies retain
+their own licences. See [licensing](docs/LICENSING.md). The customised sidebar
+image remains on **security and licensing distribution HOLD**, separate from
+the public Function-only route. Its [source recipe](docs/INSTALL.md) is for
+review, not an approved binary release.
+
+`magazine/` contains the independent execution core;
+`integrations/open_webui/function/` contains the native Function and interface.
+`examples/simple/` holds the small workflow; `tests/` and integration tests hold
+the regression suites. [Changelog](CHANGELOG.md) and [release notes](docs/RELEASE_NOTES.md) summarise beta.5.

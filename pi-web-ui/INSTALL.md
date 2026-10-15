@@ -2,7 +2,7 @@
 
 This guide is for people who **already have Pi Web UI running** and want to add Magazine. You do not need Open WebUI or ASTER.
 
-**Status:** The 0.1.0-pi.3-rc.1 package is being prepared for public release. The commands below apply once the plugin ZIP appears in [GitHub Releases](../../releases). Do not substitute a ZIP from an unknown source.
+**Status:** The 0.1.0-pi.3-rc.1 package is being prepared for public release. The commands below apply once the plugin ZIP appears in [GitHub Releases](https://github.com/Nundrian/Magazine/releases). Do not substitute a ZIP from an unknown source.
 
 [Back to Magazine for Pi](README.md)
 
@@ -28,7 +28,7 @@ You'll need:
 
 ## 1. Download and check the release
 
-When the Pi package is available, download the **plugin ZIP** from the repository's [Releases](../../releases) page. The matching source ZIP is for review and rebuilding, not a substitute for the plugin installer.
+When the Pi package is available, download the **plugin ZIP** from the repository's [Releases](https://github.com/Nundrian/Magazine/releases) page. **Choose an asset explicitly named Magazine-Pi; the Open WebUI packages are not interchangeable.** The matching source ZIP is for review and rebuilding, not a substitute for the plugin installer.
 
 For the approved candidate, the expected SHA-256 values are:
 
@@ -184,4 +184,4 @@ Never publish tokens, owner keys, model API credentials, administrator import ke
 
 ---
 
-Need help? [Open an issue](../../issues) and include the Pi version, Magazine version, operating environment, what you tried, and **redacted** error messages. Don't paste secrets or private project data.
+Need help? [Open an issue](https://github.com/Nundrian/Magazine/issues) and include the Pi version, Magazine version, operating environment, what you tried, and **redacted** error messages. Don't paste secrets or private project data.

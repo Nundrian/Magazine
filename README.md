@@ -5,6 +5,19 @@
 ![Beta version](https://img.shields.io/badge/version-0.1.0--beta.5-blue)
 [![MIT licence](https://img.shields.io/badge/licence-MIT-green)](LICENSE)
 
+## Choose your Magazine edition
+
+Magazine is available in two versions for different chat interfaces. **Choose the one that matches what you already use.**
+
+| Your interface | Start here |
+| --- | --- |
+| **Open WebUI** | You're in the right place. The instructions below describe the **0.1.0-beta.5 Open WebUI edition**. [Jump to installation](#install-the-open-webui-function). |
+| **Pi Web UI** | [Read the Pi edition guide](pi-web-ui/README.md) · [Pi installation instructions](pi-web-ui/INSTALL.md). The Pi prerelease download is being prepared; it is **not yet available** in this repository. |
+
+Both editions execute independently prepared tasks called *cartridges*, but they have **different installers and compatibility requirements**. Don't install an Open WebUI Function package into Pi or a Pi plugin into Open WebUI.
+
+---
+
 Magazine executes prewritten tasks called *cartridges* through language models
 in **Open WebUI**. Each runs in a fresh temporary conversation. Magazine saves the result
 before moving on to the next cartridge.

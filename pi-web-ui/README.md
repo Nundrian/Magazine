@@ -2,7 +2,7 @@
 
 **Beta release candidate: 0.1.0-pi.3-rc.1**
 
-[Installation guide](INSTALL.md) · [Open WebUI edition](../README.md) · [Report a problem](../../issues)
+[Installation guide](INSTALL.md) · [Open WebUI edition](../README.md) · [Report a problem](https://github.com/Nundrian/Magazine/issues)
 
 Magazine helps a smaller language model work through a larger project **one manageable task at a time**. It also works with larger models.
 
@@ -10,7 +10,7 @@ You prepare the tasks, called **cartridges**, in advance. Magazine runs them in 
 
 **This is an execution tool, not an automatic planner.** It doesn't write the project plan for you, improve a model's intelligence, or automatically feed one cartridge's answer into the next.
 
-> **Release status:** The Pi edition has completed its documented candidate tests. Its download archives have not yet been published in this repository. These instructions are provided ahead of the first public prerelease; check [GitHub Releases](../../releases) for the eventual Pi package before attempting installation.
+> **Release status:** The Pi edition has completed its documented candidate tests. Its download archives have not yet been published in this repository. These instructions are provided ahead of the first public prerelease; check [GitHub Releases](https://github.com/Nundrian/Magazine/releases) for the eventual Pi package before attempting installation.
 
 ## At a glance
 

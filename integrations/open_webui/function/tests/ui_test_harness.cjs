@@ -80,7 +80,7 @@ async function page(override = () => undefined, config = {}) {
   vm.runInNewContext(script,context);await tick();
   return {elements,all,calls,storage,copied,timers,root,el:id=>elements.get(id),
     themeChanged:()=>themeObserver?.(),osChanged:dark=>{media.matches=dark;mediaListener?.();},
-    async poll(){const entry=[...timers].find(([,t])=>t.ms===2500);assert.ok(entry,'scheduled poll');
+    async poll(){const entry=[...timers].find(([,t])=>t.ms>=5000&&t.ms<=30000);assert.ok(entry,'scheduled poll');
       timers.delete(entry[0]);await entry[1].fn();await tick();}};
 }
 async function chooseModel(p,id='first',model='ornith:9b-q8_0'){

@@ -1,6 +1,6 @@
 {
-  "archive_sha256": "82fbb7b41b00142c9ffbb4fb1266aeddb981c3b5b9cb38dc8bed99fbfdff4dd5",
-  "file_count": 29,
+  "archive_sha256": "e6bb2819204482989ea4631c7335d81d0add40923baa183a7225e20cb11688ed",
+  "file_count": 30,
   "files": [
     {
       "path": "magazine/__init__.py",
@@ -16,6 +16,11 @@
       "path": "magazine/complete.py",
       "sha256": "07cd12c6f75bb9faafa327bd0c53350304501083631d0fa6ac8f53d2f2184e2b",
       "size": 5264
+    },
+    {
+      "path": "magazine/conversation_archive.py",
+      "sha256": "c2ba691ab421806e3982045fbe6842cef3adbfcf4d18882335ea093b10ce9c69",
+      "size": 17656
     },
     {
       "path": "magazine/document.py",
@@ -44,8 +49,8 @@
     },
     {
       "path": "magazine/orchestration.py",
-      "sha256": "1ac5dfb5da24da10f7b2cc30f9e7262468a57593e7ffd6180b6031b2ff703d32",
-      "size": 5847
+      "sha256": "0b4d0318c61d2ddb7f46dc1e573113acdde4eb8a3568987682e8ecdb559f31fd",
+      "size": 6234
     },
     {
       "path": "magazine/package.py",
@@ -144,8 +149,8 @@
     },
     {
       "path": "magazine/webui_dispatch.py",
-      "sha256": "9869165601e93296caf3573ddc885afa9f7bd2f8dd918489a16443078aa24466",
-      "size": 24423
+      "sha256": "8ccc9d91474cfc8fa92e85e3ab80ba3cee53501cbec4b83aca7d22d152810b3c",
+      "size": 27736
     }
   ],
   "format": 1

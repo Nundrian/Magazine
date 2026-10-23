@@ -680,12 +680,17 @@ def test_atomic_publication_rejects_destination_created_after_conflict_scan(libr
     assert_no_staging(library)
 
 
-def test_unsupported_atomic_publication_fails_closed(library, tmp_path, monkeypatch):
+def test_unsupported_rename_uses_exclusive_portable_publication_without_overwrite(library, tmp_path, monkeypatch):
     monkeypatch.setattr(runner.ctypes, "CDLL", lambda *args, **kwargs: types.SimpleNamespace())
+    archive = project_zip(tmp_path / "input")
+    response = import_project(library, archive)
+    assert response["imported"] is True
+    published = (library / "Imported/magazine.yaml").read_bytes()
     with pytest.raises(runner._LibraryError) as exc:
-        import_project(library, project_zip(tmp_path / "input"))
-    assert exc.value.status_code == 503
-    assert list(library.iterdir()) == []
+        import_project(library, archive)
+    assert exc.value.status_code == 409
+    assert (library / "Imported/magazine.yaml").read_bytes() == published
+    assert_no_staging(library)
 
 
 def test_import_lock_wait_is_bounded(library, tmp_path, monkeypatch):

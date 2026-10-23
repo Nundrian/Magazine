@@ -32,10 +32,12 @@ import json
 import logging
 import time
 import uuid
+import os
 from dataclasses import dataclass
 from urllib.parse import urlsplit
 
 import httpx
+from magazine import conversation_archive as archives
 
 __all__ = ["CancellationResult", "make_open_webui_dispatch"]
 
@@ -174,6 +176,34 @@ class _OpenWebUIDispatch:
     async def __call__(self, prompt, model_id):
         return await self._dispatch(prompt, model_id)
 
+    def bind_archive(self, run_dir, owner_id, cartridge_id, cartridge_ids):
+        """Bind this one adapter cycle to the already ownership-fenced run."""
+        base = os.path.dirname(os.path.abspath(run_dir))
+        self._chat_state["archive_binding"] = {
+            "store": archives.ArchiveStore(os.path.join(base, "archive"), owner_id, os.path.basename(base)),
+            "cartridge_id": cartridge_id, "index": cartridge_ids.index(cartridge_id)+1,
+            "cartridge_ids": list(cartridge_ids),
+        }
+
+    def _archive_before_cleanup(self):
+        binding = self._chat_state.get("archive_binding")
+        intent = self._chat_state.get("archive_intent")
+        if not binding or not intent or intent['chat_id'] != self.last_chat_id:
+            return False
+        store = binding['store']
+        try:
+            # A prior failed intent write must be retried before publication.
+            intent = store.intent(intent)
+            key = store.save(intent, self._chat_state['archive_raw'])
+            store.materialize(binding['cartridge_ids'])
+            store.verify(key)  # Independent final gate immediately before DELETE.
+            store.status_event(intent, 'archive', 'VERIFIED')
+            return True
+        except Exception:
+            try: store.status_event(intent, 'archive', 'FAILED')
+            except Exception: pass  # Missing receipt still makes status visibly PARTIAL.
+            return False
+
     async def cancel_active(self, confirmation_timeout: float = 10.0):
         """Request and verify cancellation of this adapter's active chat.
 
@@ -271,6 +301,8 @@ class _OpenWebUIDispatch:
         """Remove the temporary Open WebUI chat created by the most recent
         successful dispatch.  Never raises; returns a bool."""
         chat_id = self._chat_state.get("chat_id")
+        if not self._archive_before_cleanup():
+            return False  # No verified archive = no chat deletion, including unbound adapters.
         # Reset before the request so a failed or slow delete cannot leave a
         # stale id that a later cycle would re-target.
         self._chat_state["chat_id"] = None
@@ -287,6 +319,9 @@ class _OpenWebUIDispatch:
                     },
                 )
             if 200 <= response.status_code < 300:
+                try:
+                    self._chat_state['archive_binding']['store'].status_event(self._chat_state['archive_intent'], 'cleanup', 'DELETED')
+                except Exception: pass
                 return True
             if response.status_code != 404:
                 logger.warning(
@@ -294,8 +329,12 @@ class _OpenWebUIDispatch:
                     chat_id,
                     response.status_code,
                 )
+            try: self._chat_state['archive_binding']['store'].status_event(self._chat_state['archive_intent'], 'cleanup', 'WARNING')
+            except Exception: pass
             return False
         except Exception as exc:
+            try: self._chat_state['archive_binding']['store'].status_event(self._chat_state['archive_intent'], 'cleanup', 'WARNING')
+            except Exception: pass
             logger.warning(
                 "Open WebUI chat cleanup %r failed: %s",
                 chat_id,
@@ -372,6 +411,8 @@ def make_open_webui_dispatch(
         _chat_state["task_ids"] = ()
         _chat_state["phase"] = "creating"
         _chat_state["cancel_confirmed"] = False
+        _chat_state.pop("archive_intent", None)
+        _chat_state.pop("archive_raw", None)
 
         user_id = str(uuid.uuid4())
         assistant_id = str(uuid.uuid4())
@@ -442,6 +483,19 @@ def make_open_webui_dispatch(
             # remove it after the result has been durably persisted.
             _chat_state["chat_id"] = chat_id
             _chat_state["phase"] = "created"
+            binding = _chat_state.get('archive_binding')
+            if binding:
+                intent = {'cartridge_id':binding['cartridge_id'], 'index':binding['index'],
+                          'chat_id':chat_id, 'model_id':model_id, 'prompt':prompt,
+                          'user_message_id':user_id, 'assistant_message_id':assistant_id,
+                          'owner_id':binding['store'].owner_id, 'run_id':binding['store'].run_id,
+                          'schema':archives.SCHEMA}
+                _chat_state['archive_intent'] = intent
+                try: binding['store'].intent(intent)
+                except Exception:
+                    # Execution/result persistence remain independent. Cleanup
+                    # cannot pass until this intent and its evidence are durable.
+                    pass
 
             if _chat_state.get("cancel_requested"):
                 raise asyncio.CancelledError(
@@ -506,6 +560,8 @@ def make_open_webui_dispatch(
             response = await _http_request(client, "GET", base_url + retrieve_path, None, api_key)
             _require_success(response, f"GET {retrieve_path}")
             retrieved = _json_body(response, f"GET {retrieve_path}")
+            raw = getattr(response, 'content', None)
+            _chat_state['archive_raw'] = raw if isinstance(raw, bytes) else archives.encoded(retrieved)
             if not isinstance(retrieved, dict):
                 raise ValueError(f"GET {retrieve_path}: retrieved chat is not an object (HTTP {response.status_code})")
             chat = retrieved.get("chat")

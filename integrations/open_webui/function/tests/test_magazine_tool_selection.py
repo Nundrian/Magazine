@@ -39,7 +39,7 @@ def test_c23_exact_interface_tool_ids_admit_and_persist_without_starting(client,
     response = client.post('/api/magazine/runs', headers=A, json=body)
     assert response.status_code == 200, response.text
     ready = response.json(); rid = ready['run_id']
-    expected = ['tool-a','tool-c'] if mode == 'excluded' else [] if mode == 'cleared' else ['tool-a','tool-b','tool-c']
+    expected = ['tool-a','tool-c'] if mode == 'excluded' else ['tool-a','tool-b','tool-c'] if mode == 'reselected' else []
     assert ready['status'] == 'READY' and ready['tool_ids'] == expected
     assert ready['model_map'] == {'first':'mock-first','second':'mock-second'}
     assert runner._load_meta('test-a',rid)['tool_ids'] == expected

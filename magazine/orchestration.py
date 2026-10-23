@@ -110,6 +110,13 @@ async def execute_one_cartridge(
         )
         raise run_control.StopRequested(stopped)
 
+    # Optional adapter-only evidence binding. The core state machine, routing
+    # and ordinary injected dispatch callables are unchanged.
+    bind_archive = getattr(type(dispatch), "bind_archive", None)
+    if bind_archive is not None:
+        bind_archive(dispatch, run_dir, owner_id, state["current"],
+                     state["done"] + [state["current"]] + state["todo"])
+
     dispatched = await execute.dispatch_current_cartridge(
         magazine_path, state_path, model_map, dispatch
     )

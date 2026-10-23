@@ -70,7 +70,7 @@ test('C2.4 successful replacement resets fresh models/tools only after its respo
  await load(p);await models(p);const before=p.el('pkg-doc').textContent;await select(p,'Second');const request=p.el('btn-library-select').click();await tick();
  assert.equal(p.el('pkg-doc').textContent,before);assert.equal(p.el('btn-create').disabled,true);
  resolve(replacement());await request;assert.match(p.el('library-msg').textContent,/Second workflow — 2 steps/);
- assert.equal(p.el('model-different').value,'');assert.equal(p.el('tool-beta').checked,true);assert.equal(writes(p).length,0);
+ assert.equal(p.el('model-different').value,'');assert.equal(p.el('tool-beta').checked,false);assert.equal(writes(p).length,0);
 });
 test('C2.4 old responses and finally blocks cannot overwrite a newer explicit load',async()=>{
  let first,second;const a=new Promise(r=>first=r),b=new Promise(r=>second=r);
@@ -116,14 +116,14 @@ test('C2.4 explicit shared selection satisfies preparation without losing indepe
  p.el('model-mode').value='independent';await p.el('model-mode').emit('change');assert.equal(p.el('model-first').value,'ornith:9b-q8_0');
  assert.equal(p.el('model-second').value,'other');assert.equal(p.el('btn-create').disabled,false);assert.equal(writes(p).length,0);
 });
-test('C2.4 source and tool exclusions survive rechecking the same workflow, themes and history',async()=>{
- const p=await make();await load(p);await models(p);const box=p.el('tool-beta');box.checked=false;await box.onchange.call(box);
+test('C2.4 source and explicit tool grants survive rechecking the same workflow, themes and history',async()=>{
+ const p=await make();await load(p);await models(p);const box=p.el('tool-alpha');box.checked=true;await box.onchange.call(box);
  p.el('appearance').value='dark';await p.el('appearance').emit('change');await open(p,'new');await load(p);
- assert.equal(box.checked,false);assert.equal(p.el('tool-count').textContent,'Tools selected: 1 of 2');assert.equal(p.el('model-second').value,'other');
+ assert.equal(box.checked,true);assert.equal(p.el('tool-beta').checked,false);assert.equal(p.el('tool-count').textContent,'Tools selected: 1 of 2');assert.equal(p.el('model-second').value,'other');
  assert.equal(p.el('btn-create').disabled,false);assert.equal(writes(p).length,0);
 });
 test('C2.4 prepare persists exactly current setup as READY; Start is a separate explicit mock action',async()=>{
- const p=await make();await load(p);await models(p);const box=p.el('tool-beta');box.checked=false;await box.onchange.call(box);
+ const p=await make();await load(p);await models(p);const box=p.el('tool-alpha');box.checked=true;await box.onchange.call(box);
  await p.el('btn-create').click();assert.equal(writes(p).length,1);assert.deepEqual(writes(p)[0].body.tool_ids,['alpha']);
  assert.equal(writes(p)[0].body.project_id,'Demo');assert.equal(writes(p)[0].body.owner_id,undefined);
  assert.deepEqual(writes(p)[0].body.model_map,{first:'ornith:9b-q8_0',second:'other'});assert.equal(p.el('run-badge').textContent,'Ready to start');
@@ -139,7 +139,7 @@ test('C2.4 model reference remains collapsed, noninteractive and separate from v
  assert.match(html,/<details><summary>Model information<\/summary>/);assert.match(html,/Available models \(reference only\)/);
  assert.ok(html.indexOf('</details>',html.indexOf('<summary>Model information'))<html.indexOf('id="tools-heading"'));
  const p=await make();await load(p);assert.ok(p.el('model-first'));assert.equal(p.el('models').listeners.change,undefined);
- assert.equal(p.el('tool-alpha').checked,true);assert.equal(p.el('btn-tools-clear-all').disabled,false);
+ assert.equal(p.el('tool-alpha').checked,false);assert.equal(p.el('btn-tools-clear-all').disabled,false);
 });
 test('C2.4 optional JSON/file and ZIP import paths retain contracts and never prepare automatically',async()=>{
  const p=await make(url=>url==='/api/magazine/library/import'?{imported:true,project_id:'Second',name:'Second workflow'}:undefined);

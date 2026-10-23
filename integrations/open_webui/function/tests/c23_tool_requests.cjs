@@ -10,6 +10,8 @@ async function capture(){
       url.endsWith('/models')?{models:[{id:'mock-first'},{id:'mock-second'}]}:undefined);
     p.el('library-workflows').value='Demo';await p.el('btn-library-select').click();
     if(mode==='excluded'){
+      // Explicitly grant the set before testing a single deselection.
+      await p.el('btn-tools-select-all').click();
       const box=p.el('tool-tool-b');box.checked=false;await box.onchange.call(box);
     }
     if(mode==='cleared'||mode==='reselected')await p.el('btn-tools-clear-all').click();
@@ -18,7 +20,7 @@ async function capture(){
     await p.el('btn-create').click();
     const posts=p.calls.filter(c=>c.path==='/api/magazine/runs'&&c.method==='POST');
     assert.equal(posts.length,1);assert.equal(p.calls.filter(c=>c.path.endsWith('/start')).length,0);
-    const expected=mode==='excluded'?['tool-a','tool-c']:mode==='cleared'?[]:['tool-a','tool-b','tool-c'];
+    const expected=mode==='excluded'?['tool-a','tool-c']:mode==='reselected'?['tool-a','tool-b','tool-c']:[];
     assert.deepEqual(posts[0].body.tool_ids,expected);requests[mode]=posts[0].body;
     assert.equal(JSON.stringify(snapshot),before);
   }

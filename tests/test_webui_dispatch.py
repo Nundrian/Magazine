@@ -501,10 +501,26 @@ def _responses_with_cleanup(model_id):
     return _responses(model_id) + [(200, True)]
 
 
-def test_last_chat_id_tracks_created_chat(monkeypatch):
+def _archive_enabled(dispatch, tmp_path):
+    # Bind the same ownership-fenced run scope as the orchestration layer.
+    dispatch.bind_archive(str(tmp_path / "run" / "state"), "owner", "first", ["first"])
+
+
+def test_cleanup_without_verifiable_archive_retains_chat(monkeypatch):
     _pin_ids(monkeypatch)
     client = _FakeClient(_responses_with_cleanup(MODEL_A))
     dispatch = _dispatch(monkeypatch, client)
+    asyncio.run(dispatch(PROMPT, MODEL_A))
+    assert asyncio.run(dispatch.cleanup()) is False
+    assert dispatch.last_chat_id == CHAT_ID
+    assert len(client.calls) == 4  # Absolutely no DELETE without archived evidence.
+
+
+def test_last_chat_id_tracks_created_chat(monkeypatch, tmp_path):
+    _pin_ids(monkeypatch)
+    client = _FakeClient(_responses_with_cleanup(MODEL_A))
+    dispatch = _dispatch(monkeypatch, client)
+    _archive_enabled(dispatch, tmp_path)
     # Nothing created yet.
     assert dispatch.last_chat_id is None
     asyncio.run(dispatch(PROMPT, MODEL_A))
@@ -515,10 +531,11 @@ def test_last_chat_id_tracks_created_chat(monkeypatch):
     assert dispatch.last_chat_id is None
 
 
-def test_cleanup_deletes_the_created_chat_with_correct_auth(monkeypatch):
+def test_cleanup_deletes_the_created_chat_with_correct_auth(monkeypatch, tmp_path):
     _pin_ids(monkeypatch)
     client = _FakeClient(_responses_with_cleanup(MODEL_A))
     dispatch = _dispatch(monkeypatch, client)
+    _archive_enabled(dispatch, tmp_path)
     asyncio.run(dispatch(PROMPT, MODEL_A))
     asyncio.run(dispatch.cleanup())
     # The DELETE is the 5th request on the shared fake client.
@@ -541,32 +558,35 @@ def test_cleanup_is_noop_when_no_chat_created(monkeypatch):
     assert client.calls == []  # no HTTP was made
 
 
-def test_cleanup_http_failure_does_not_raise_and_resets(monkeypatch):
+def test_cleanup_http_failure_does_not_raise_and_resets(monkeypatch, tmp_path):
     """A 5xx from the DELETE is swallowed: cleanup never raises."""
     _pin_ids(monkeypatch)
     client = _FakeClient(_responses(MODEL_A) + [(500, {"error": "nope"})])
     dispatch = _dispatch(monkeypatch, client)
+    _archive_enabled(dispatch, tmp_path)
     asyncio.run(dispatch(PROMPT, MODEL_A))
     assert dispatch.last_chat_id == CHAT_ID
     assert asyncio.run(dispatch.cleanup()) is False  # 5xx -> not removed
     assert dispatch.last_chat_id is None  # tracker still reset
 
 
-def test_cleanup_404_is_gracefully_swallowed(monkeypatch):
+def test_cleanup_404_is_gracefully_swallowed(monkeypatch, tmp_path):
     """A 404 (chat already gone) is not a crash and returns False."""
     _pin_ids(monkeypatch)
     client = _FakeClient(_responses(MODEL_A) + [(404, {"detail": "not found"})])
     dispatch = _dispatch(monkeypatch, client)
+    _archive_enabled(dispatch, tmp_path)
     asyncio.run(dispatch(PROMPT, MODEL_A))
     assert asyncio.run(dispatch.cleanup()) is False
     assert dispatch.last_chat_id is None
 
 
-def test_cleanup_is_idempotent(monkeypatch):
+def test_cleanup_is_idempotent(monkeypatch, tmp_path):
     """A second cleanup call cannot re-delete a stale or already-removed chat."""
     _pin_ids(monkeypatch)
     client = _FakeClient(_responses(MODEL_A) + [(200, True)])
     dispatch = _dispatch(monkeypatch, client)
+    _archive_enabled(dispatch, tmp_path)
     asyncio.run(dispatch(PROMPT, MODEL_A))
     asyncio.run(dispatch.cleanup())
     # Re-calling cleanup must NOT issue a second DELETE.
@@ -574,10 +594,11 @@ def test_cleanup_is_idempotent(monkeypatch):
     assert asyncio.run(dispatch.cleanup()) is False
 
 
-def test_cleanup_transport_error_does_not_raise(monkeypatch):
+def test_cleanup_transport_error_does_not_raise(monkeypatch, tmp_path):
     _pin_ids(monkeypatch)
     client = _FakeClient(_responses(MODEL_A))
     dispatch = _dispatch(monkeypatch, client)
+    _archive_enabled(dispatch, tmp_path)
     asyncio.run(dispatch(PROMPT, MODEL_A))
     # Force the cleanup's own client to raise a transport error.
     monkeypatch.setattr(

@@ -357,8 +357,9 @@ def test_destination_parent_symlink_does_not_escape(mag, storage, tmp_path):
 def test_portable_publication_on_windows_style_filesystem(mag, storage, monkeypatch, fail_link):
     owner, rid = completed(mag)
     def unsupported(*args):
-        ctypes.set_errno(errno.EINVAL)
-        raise runner._LibraryError("Atomic project publication failed or is unsupported; existing projects were preserved.", 503)
+        failure = runner._LibraryError("Atomic project publication failed or is unsupported; existing projects were preserved.", 503)
+        failure.publication_unsupported = True
+        raise failure
     monkeypatch.setattr(runner, "_library_publish", unsupported)
     if fail_link:
         monkeypatch.setattr(os, "link", lambda *args, **kwargs: (_ for _ in ()).throw(OSError("link failed")))

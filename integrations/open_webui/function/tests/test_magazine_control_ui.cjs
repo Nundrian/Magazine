@@ -25,7 +25,7 @@ test('one explicit start; duplicate handler call refused while pending; 202 reco
   assert.equal(p.el('btn-start').disabled,true);await p.el('btn-start').emit('click');
   working=true;resolve({_status:202,status:'accepted',attempt:1});await start;
   assert.equal(posts(p,'/start').length,1);assert.equal(p.el('run-badge').textContent,'Working');
-  assert.equal(p.el('run-progress').value,0);assert.ok([...p.timers.values()].some(t=>t.ms===2500));
+  assert.equal(p.el('run-progress').value,0);assert.ok([...p.timers.values()].some(t=>t.ms===5000));
 });
 test('Stop is explicit, preserves the original page, and shows confirmed durable termination',async()=>{
   let stopped=false;const control={request:'STOP',cancellation_status:'CONFIRMED',termination_status:'CONFIRMED',termination_method:'active-inference-cancelled',actual_at:'2026-10-13T10:00:00Z'};
@@ -90,7 +90,7 @@ test('RUNNING completion gets exact safe multiline results in done order and sto
   assert.equal(p.el('saved-results').children[0].children[1].textContent,output);
   await p.el('saved-results').children[0].children[2].click();assert.equal(p.copied[0],output);
   assert.match(textTree(p.el('saved-results').children[1]),/empty/i);
-  assert.ok(![...p.timers.values()].some(t=>t.ms===2500));
+  assert.ok(![...p.timers.values()].some(t=>t.ms===5000));
 });
 test('HALTED partial results distinguish missing and empty; recovery success never starts',async()=>{
   let recovered=false;const p=await page(path=>{
@@ -141,11 +141,11 @@ test('late results and late Start do not overwrite a newly selected run',async()
   release({run_id:'test-run',done:['first'],results:{first:'OLD'}});startRelease({_status:202,status:'accepted'});
   await opening;await starting;assert.match(p.el('run-reference').textContent,/new/);assert.doesNotMatch(textTree(p.el('saved-results')),/OLD/);
 });
-test('polling network failure stops boundedly and manual refresh resumes',async()=>{
+test('polling network failure retries with bounded backoff and manual refresh restores cadence',async()=>{
   let failed=false;const p=await page(path=>{if(path===statusPath){if(failed)throw Error('offline');return state('RUNNING');}});
   await open(p,'test-run');failed=true;await p.poll();
-  assert.ok(![...p.timers.values()].some(t=>t.ms===2500));assert.match(p.el('control-msg').textContent,/Check progress/);
-  failed=false;await p.el('btn-refresh-run').click();assert.ok([...p.timers.values()].some(t=>t.ms===2500));
+  assert.ok([...p.timers.values()].some(t=>t.ms===10000));assert.match(p.el('control-msg').textContent,/Check progress/);
+  failed=false;await p.el('btn-refresh-run').click();assert.ok([...p.timers.values()].some(t=>t.ms===5000));
 });
 test('failed results are not shown as an empty workflow and can be retried',async()=>{
   let fail=true;const p=await page(path=>{
@@ -196,11 +196,11 @@ test('accepted Start followed by READY must not enable a second Start without a 
   await prepare(p);await p.el('btn-start').click();assert.equal(p.el('btn-start').disabled,true);
   assert.match(p.el('control-msg').textContent,/Check progress/);
 });
-test('results connection failure also stops automatic polling rather than retrying forever',async()=>{
+test('results connection failure schedules a bounded retry rather than stopping automatic polling',async()=>{
   const p=await page(path=>{
     if(path===statusPath)return state('RUNNING');
     if(path.endsWith('/results'))throw Error('offline');
-  });await open(p,'test-run');assert.ok(![...p.timers.values()].some(t=>t.ms===2500));
+  });await open(p,'test-run');assert.ok([...p.timers.values()].some(t=>t.ms===10000));
 });
 test('late preparation leaves a subsequently reopened run selected',async()=>{
   let release;const pending=new Promise(r=>release=r);
@@ -218,11 +218,11 @@ test('empty model discovery prevents preparing; actual engine admission wording 
     detail:{admission_errors:["model 'not-here' (for key 'research') is not in the user's available models"]}}:undefined);
   await prepare(q);assert.match(q.el('create-msg').textContent,/AI model isn't available/);
 });
-test('read requests have a 10-second abort deadline; timeout leaves stale actions disabled',async()=>{
+test('read requests have a 20-second abort deadline; timeout leaves stale actions disabled',async()=>{
   let hanging=false;const p=await page((path,body,opts)=>{
     if(path===statusPath&&hanging)return new Promise((resolve,reject)=>opts.signal.addEventListener('abort',()=>reject(Error('timeout'))));
   });await open(p,'test-run');hanging=true;const checking=p.el('btn-refresh-run').click();await tick();
-  const timer=[...p.timers].find(([,t])=>t.ms===10000);assert.ok(timer);p.timers.delete(timer[0]);timer[1].fn();await checking;
+  const timer=[...p.timers].find(([,t])=>t.ms===20000);assert.ok(timer);p.timers.delete(timer[0]);timer[1].fn();await checking;
   assert.equal(p.calls.filter(c=>c.path===statusPath).at(-1).signal.aborted,true);assert.equal(p.el('btn-start').disabled,true);
 });
 test('uncertain recovery response never starts and requires checking persisted state',async()=>{

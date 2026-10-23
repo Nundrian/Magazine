@@ -1,11 +1,11 @@
 {
   "schema_version": "1.0",
-  "release": "Magazine-0.1.0-beta.5-FunctionOnly",
+  "release": "Magazine-0.1.0-beta.5-archives.3-FunctionOnly-Candidate",
   "supported_open_webui": "0.11.3",
   "pins": {
-    "embedded_core_sha256": "82fbb7b41b00142c9ffbb4fb1266aeddb981c3b5b9cb38dc8bed99fbfdff4dd5",
-    "function_source_sha256": "25f7dfe94afc0a7c9ae343d80a3c2952cda9df31e54da11593617b7f125cd692",
-    "function_export_sha256": "f3f8a1c6910e0e2905316b28820b194e94253cb86d6d4c90947e9b6ce88830d0"
+    "embedded_core_sha256": "e6bb2819204482989ea4631c7335d81d0add40923baa183a7225e20cb11688ed",
+    "function_source_sha256": "bea8b14132decf2d26b6d0b5bffed9c8d288e29fe95c0b29a7b5c0410be8fe89",
+    "function_export_sha256": "2dd29afb558a159100bb7131376bd7ae1e052e08cdddb445d6d8fa02fd8723c6"
   },
   "include": [
     ".gitignore",

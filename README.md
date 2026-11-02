@@ -1,5 +1,7 @@
 # Magazine
 
+> **Development status — 2 November 2026.** The maintainer's current local installation is **0.1.0-beta.10-rc.2** on Open WebUI **0.12.5**, with a separate **Magazine Sidebar Launcher 0.1.0**. That verified local baseline is frozen for an isolated efficiency/cleanup pass; the live installation and local LLMs are in use and are not available for development tests. **The public source and download instructions below are still beta.5**, not the installed RC2 build. See the [frozen-baseline and optimisation brief](docs/OPTIMISATION_BASELINE_2026-11-02.md) for provenance, test isolation and acceptance requirements.
+
 **v0.1.0-beta.5 — Beta / Proof of Concept**
 
 ![Beta version](https://img.shields.io/badge/version-0.1.0--beta.5-blue)

@@ -16,6 +16,18 @@ Magazine is available in two versions for different chat interfaces. **Choose th
 | **Open WebUI** | You're in the right place. The instructions below describe the **0.1.0-beta.5 Open WebUI edition**. [Jump to installation](#install-the-open-webui-function). |
 | **Pi Web UI** | [Read the Pi edition guide](pi-web-ui/README.md) · [Pi installation instructions](pi-web-ui/INSTALL.md). The Pi prerelease download is being prepared; it is **not yet available** in this repository. |
 
+### Open WebUI sidebar: two different implementations
+
+Both sidebar implementations add a **navigation link** to `/magazine`. Neither is the Magazine cartridge runner, and clicking the link does not start a workflow.
+
+| Sidebar implementation | How it works | Version and availability |
+| --- | --- | --- |
+| **Legacy Docker-image sidebar** | Builds a customised Open WebUI frontend with a [sidebar patch and Dockerfile](integrations/open_webui/frontend/README.md). The Magazine Function is imported separately. | Pinned to **Open WebUI 0.11.3 / Magazine beta.5**. The source recipe is in this repository, but image distribution remains on **security/licensing HOLD**. It is **not** validated for 0.12.5. |
+| **New independent Sidebar Launcher 0.1.0 Function** | Adds the sidebar entry through the existing Open WebUI static loader. Does **not** replace the Docker image or change the cartridge runner. | Tested on the maintainer's local **Open WebUI 0.12.5 / Magazine beta.10 RC2**. The launcher source is **not yet published in this repository**. |
+| **Function-only beta.5 installation** | Opens Magazine directly at `/magazine` with no sidebar modification. | The currently published beta.5 installation path, accepted for **Open WebUI 0.11.3**. |
+
+The old Docker sidebar remains in the repository for potential future work. These are **alternative navigation integrations**, not two install steps to combine. See the [optimisation baseline](docs/OPTIMISATION_BASELINE_2026-11-02.md) for the preserved current setup.
+
 Both editions execute independently prepared tasks called *cartridges*, but they have **different installers and compatibility requirements**. Don't install an Open WebUI Function package into Pi or a Pi plugin into Open WebUI.
 
 ---

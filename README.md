@@ -18,9 +18,7 @@ Both editions execute independently prepared tasks called *cartridges*, but they
 
 ---
 
-Magazine executes prewritten tasks called *cartridges* through language models
-in **Open WebUI**. Each runs in a fresh temporary conversation. Magazine saves the result
-before moving on to the next cartridge.
+Magazine runs prewritten LLM tasks called *cartridges*, one at a time. Each task runs in a fresh temporary conversation with its assigned model. Magazine records the result before proceeding to the next task. The Open WebUI and Pi editions have separate installation instructions.
 
 I built Magazine to investigate whether smaller, locally hosted language models
 can undertake more complicated work when it's divided into manageable tasks.

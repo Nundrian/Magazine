@@ -70,6 +70,12 @@ No hard-coded preferred model, no external paid service and no requirement for a
 
 Current recorded acceptance includes beta.10 RC1 **1,091 Python tests and 138 JavaScript tests**, plus RC2 **49 UI and 28 API/export/execution checks** and sidebar lifecycle checks. These are historical claims, not proof that the new isolated environment has passed. Recreate and rerun the relevant suites; report skipped/unavailable environment tests separately.
 
+### Preserve both sidebar routes
+
+The public repository already contains the **legacy patched-Docker-image sidebar** under `integrations/open_webui/frontend/`, including `Dockerfile`, `patches/0001-magazine-sidebar-launcher.patch`, Compose example and build notes. It is pinned to Open WebUI **0.11.3** and remains under its documented security/licensing **distribution HOLD**. **Retain this recipe, patch and tests as a historical/future optional integration, even if it is not used by the current installation.** Do not silently delete it as dead code during bloat removal or treat it as validated for 0.12.5.
+
+Also preserve the **independent Magazine Sidebar Launcher 0.1.0 Function** from the second verified ZIP, validated against Open WebUI **0.12.5**. Keep its lifecycle, loader preservation, ownership and security tests separate from the historical Docker-image checks. Future Docker integration should be a separately version-pinned, tested candidate, not a change to the currently running container.
+
 ### 6. Acceptance and handoff
 
 For every optimisation: record baseline and candidate numbers, repeat count, test conditions, absolute and percentage differences, failures, and a source-level explanation. Performance improvements must be practically significant and repeatable; do not trade correctness or recovery safety for speed. Report regressions and confidence limits even when a change is retained.

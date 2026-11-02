@@ -29,6 +29,8 @@ archive. Its parser corrections are under acceptance, and binary redistribution
 remains blocked by remaining runtime review and matching notices/sources. Do not
 publish the image or deploy it to an existing installation without approval.
 
+**Version distinction:** Option B below is the original **0.11.3 patched-Docker-image** implementation retained for future review. It is not the standalone **Magazine Sidebar Launcher 0.1.0 Event Function** tested locally with Open WebUI **0.12.5**. That newer launcher does not rebuild the image, and its source has not yet been published here. See the [sidebar comparison](../README.md#open-webui-sidebar-two-different-implementations). Keep the two approaches separate and retain the Docker recipe.
+
 This is the reproducible option that meets the launcher requirement. The
 image is Open WebUI 0.11.3 with the sidebar and narrow parser security patches. The
 Magazine Function is still imported separately, so frontend customization and

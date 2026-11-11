@@ -2,6 +2,8 @@
 
 > **Development status — 2 November 2026.** The maintainer's current local installation is **0.1.0-beta.10-rc.2** on Open WebUI **0.12.5**, with a separate **Magazine Sidebar Launcher 0.1.0**. That verified local baseline is frozen for an isolated efficiency/cleanup pass; the live installation and local LLMs are in use and are not available for development tests. **The public source and download instructions below are still beta.5**, not the installed RC2 build. See the [frozen-baseline and optimisation brief](docs/OPTIMISATION_BASELINE_2026-11-02.md) for provenance, test isolation and acceptance requirements.
 
+> **Interface update — 11 November 2026.** The screenshots below document the maintainer's newer **Magazine Simple 0.2.0** local workflow page. They are an interface preview, **not** a claim that the published beta.5 Function or the frozen beta.10 RC2 build includes these controls. See [the current UI walkthrough](#magazine-simple-020-local-interface-preview). The public source/download remains beta.5 until a separate release is published.
+
 **v0.1.0-beta.5 — Beta / Proof of Concept**
 
 ![Beta version](https://img.shields.io/badge/version-0.1.0--beta.5-blue)
@@ -63,10 +65,7 @@ flowchart LR
     end
 ```
 
-Each cartridge runs in a fresh Open WebUI conversation without inherited
-parent conversation history. Magazine attempts to remove the temporary chat
-after preserving its result. The arrows show execution order, **not** output
-being passed from one cartridge into the next.
+In the currently published **beta.5** implementation, each cartridge runs in a fresh Open WebUI conversation without inherited parent history. It attempts to remove the temporary chat after preserving its result; the arrows above show execution order, **not** file handover. The newer, locally tested **Magazine Simple 0.2.0** keeps worker chats and supports explicit file handover between dependent cartridges in `magazine.yaml`. Its workflow page is shown below.
 
 Choose one available model for the workflow or assign models to individual
 cartridges. Selected tools are passed through Open WebUI at run level, subject
@@ -94,13 +93,43 @@ workflow finished executing and its responses were saved; it does not mean
 those responses are factually correct or that the real-world task succeeded.
 You'll still need to review the work and run any relevant external checks.
 
-## Interface overview
+## Magazine Simple 0.2.0 — local interface preview
 
-Magazine's interface brings workflow import, model setup, execution and previous results into one place. The labels below highlight the main controls. Model choices become available after loading a workflow.
+These screenshots show the maintainer's current **Magazine Simple 0.2.0** page in Open WebUI. This is newer than the beta.5 interface provided by the public download on this page. The example is a 26-step Nebula Run workflow; its model selection and run are illustrative, not a benchmark result.
 
-![Annotated guide to the Magazine beta interface](docs/screenshots/magazine-interface-annotated.png)
+### 1. Choose or add a workflow
 
-*Annotated illustration based on the beta.5 interface. [View the unannotated screenshot](docs/screenshots/magazine-interface-original.png).*
+![Magazine Simple workflow library showing Load your workflow, Refresh list and Add a workflow](docs/screenshots/magazine-simple-0.2.0-workflows.png)
+
+Use **Add a workflow** to import a ZIP containing `magazine.yaml` and its prompt files. Or choose an existing shared workflow from the list and click **Load your workflow**. **Refresh list** updates the catalogue. Imported workflows are shared; individual runs and results remain private to their owner.
+
+### 2. Select the AI model
+
+![Magazine Simple model selection showing one model for all 26 steps](docs/screenshots/magazine-simple-0.2.0-model.png)
+
+The setup panel lists every step in order. Choose **Use the same model for all steps** for a single-model run, or select models individually. The screenshot shows a local Qwen3.8 27B model; each run uses the models actually available in that Open WebUI installation.
+
+### 3. Choose Terminal and tools, then prepare
+
+![Magazine Simple showing Open Terminal and three selected tools with Prepare workflow](docs/screenshots/magazine-simple-0.2.0-tools.png)
+
+Select the available **Native Open Terminal** connection and only the tools the workflow needs. Tools are **not selected by default**. Click **Prepare workflow** to save your choices; **preparation does not start execution**.
+
+### 4. Start and monitor the run
+
+![Magazine Simple running page showing 26 cartridges, Start workflow, Stop workflow and Check progress](docs/screenshots/magazine-simple-0.2.0-run.png)
+
+The run panel shows its reference, work folder, selected Terminal/tools, per-step status and completion count. **Start workflow** begins execution, **Check progress** refreshes status, and **Stop workflow** requests a stop. Later cartridges wait their turn. A step marked finished means Magazine accepted its output, **not** that the feature was independently proven correct.
+
+The current local flow is:
+
+**Add/choose workflow → Load → Choose models → Select Terminal/tools → Prepare → Start → Check progress or Stop.**
+
+#### Historical beta.5 interface
+
+![Annotated guide to the Magazine beta.5 interface](docs/screenshots/magazine-interface-annotated.png)
+
+*Historical beta.5 illustration. [Unannotated image](docs/screenshots/magazine-interface-original.png). The published beta.5 installation instructions below remain separate from the Simple 0.2.0 preview above.*
 
 ## A practical example
 
@@ -208,8 +237,7 @@ baseline; they weren't rerun as beta.5 live tests. The [testing summary](docs/TE
 
 ## Current limitations
 
-- Prompts must be self-contained. Earlier results aren't automatically injected
-  into later cartridges; there is no automatic planning, repair or model substitution.
+- In the **published beta.5** build, prompts must be self-contained and earlier results aren't automatically injected into later cartridges. The newer local Simple 0.2.0 can hand over declared files, but does not automatically guarantee task correctness, planning, repair or model substitution.
 - The tested deployment is a single Linux backend, including Docker Desktop
   on Windows. Multi-worker/Redis deployments and proxy path prefixes aren't accepted.
 - Finished Work exports only the canonical cartridge text Magazine possesses,

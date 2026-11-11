@@ -212,9 +212,19 @@ deployment settings when adding mounts.
 
 ## Testing and evidence
 
-**Magazine Simple 0.2.0 (current local interface):** The illustrated workflow page documents what the maintainer has shown in Open WebUI: importing or loading a workflow, choosing models and tools, preparing a run, and viewing execution progress. It is an interface demonstration, not an independent acceptance test. **No automated test total or release-wide acceptance claim is established here for Simple 0.2.0.**
+Magazine Simple 0.2.0 is simpler than the earlier builds, but several historical tests still cover behaviours it needs. **Keep the useful test cases; do not carry their old pass results across to new code without rerunning them.**
 
-**Earlier beta.5 (published source):** Its regression results belong to that older implementation and should not be taken as evidence for Simple 0.2.0. The archived [beta.5 testing summary](docs/TESTING.md), [acceptance report](docs/ACCEPTANCE.md) and [validation instructions](docs/VALIDATION.md) remain available for anyone evaluating the published beta.5 package.
+| Behaviour worth checking in Simple 0.2.0 | Historical coverage to retain |
+| --- | --- |
+| Importing a workflow ZIP safely | Package and path validation, invalid/conflicting imports and ZIP retention checks |
+| Running cartridges in order | Orchestration, model routing, READY/start separation and run-state transition checks |
+| Choosing Terminal and tools | Open WebUI integration, dispatch and permission checks (adapt to the new selection screen) |
+| Protecting and preserving runs | Owner-scoped access, saved results, restart durability and export consistency checks |
+| Stopping a run safely | Stop-control tests, including preservation of completed work and preventing later dispatch |
+
+The published **beta.5** suite passed **989 automated regressions**: 611 core, 244 Open WebUI Function (including 43 dedicated storage cases), and 134 interface/sidebar. Those numbers remain valid **for beta.5 only**. Its older storage paths, recovery internals and sidebar tests are not automatically applicable to Simple 0.2.0. See the [historical testing summary](docs/TESTING.md), [acceptance report](docs/ACCEPTANCE.md) and [validation instructions](docs/VALIDATION.md).
+
+The persistent fault reported in the later development builds also needs its **own repeatable regression test** against Simple 0.2.0. Broad historical test totals did not establish that this fault was absent. The current local interface has been demonstrated, but a new build-specific acceptance count has not yet been documented here.
 
 ## Current limitations
 

@@ -2,7 +2,7 @@
 
 > **Development status — 2 November 2026.** The maintainer's current local installation is **0.1.0-beta.10-rc.2** on Open WebUI **0.12.5**, with a separate **Magazine Sidebar Launcher 0.1.0**. That verified local baseline is frozen for an isolated efficiency/cleanup pass; the live installation and local LLMs are in use and are not available for development tests. **The public source and download instructions below are still beta.5**, not the installed RC2 build. See the [frozen-baseline and optimisation brief](docs/OPTIMISATION_BASELINE_2026-11-02.md) for provenance, test isolation and acceptance requirements.
 
-> **Interface update — 11 November 2026.** The screenshots below document the maintainer's newer **Magazine Simple 0.2.0** local workflow page. They are an interface preview, **not** a claim that the published beta.5 Function or the frozen beta.10 RC2 build includes these controls. See [the current UI walkthrough](#magazine-simple-020-local-interface-preview). The public source/download remains beta.5 until a separate release is published.
+> **Interface update — 11 November 2026.** The [combined illustration](#magazine-simple-020-illustrated-local-interface) below reconstructs the maintainer's newer **Magazine Simple 0.2.0** local Open WebUI page from four reference views. It uses fictional sample data, numbered arrows and explanations; none of the original screenshots is displayed. This is a UI guide, **not** a claim that the public beta.5 Function or frozen beta.10 RC2 build provides these controls. The published source/download remains beta.5 until a separate release.
 
 **v0.1.0-beta.5 — Beta / Proof of Concept**
 
@@ -65,7 +65,7 @@ flowchart LR
     end
 ```
 
-In the currently published **beta.5** implementation, each cartridge runs in a fresh Open WebUI conversation without inherited parent history. It attempts to remove the temporary chat after preserving its result; the arrows above show execution order, **not** file handover. The newer, locally tested **Magazine Simple 0.2.0** keeps worker chats and supports explicit file handover between dependent cartridges in `magazine.yaml`. Its workflow page is shown below.
+In the currently published **beta.5** implementation, each cartridge runs in a fresh Open WebUI conversation without inherited parent history. It attempts to remove the temporary chat after preserving its result; the arrows above show execution order, **not** file handover. The newer, locally tested **Magazine Simple 0.2.0** keeps worker chats and supports explicit file handover between dependent cartridges in `magazine.yaml`. Its workflow page is illustrated below.
 
 Choose one available model for the workflow or assign models to individual
 cartridges. Selected tools are passed through Open WebUI at run level, subject
@@ -93,37 +93,28 @@ workflow finished executing and its responses were saved; it does not mean
 those responses are factually correct or that the real-world task succeeded.
 You'll still need to review the work and run any relevant external checks.
 
-## Magazine Simple 0.2.0 — local interface preview
+## Magazine Simple 0.2.0 — illustrated local interface
 
-These screenshots show the maintainer's current **Magazine Simple 0.2.0** page in Open WebUI. This is newer than the beta.5 interface provided by the public download on this page. The example is a 26-step Nebula Run workflow; its model selection and run are illustrative, not a benchmark result. Its imported workflow title still says “20 cartridges” because that older title was retained in the updated ZIP; the loaded workflow actually contains **26 steps**.
+The picture below combines the four reference views into **one continuous example of the Magazine page**, in the same order as the controls appear: workflow library, model selection, Terminal and tools, followed by run monitoring. It is an **illustration reconstructed from the current local UI**, not a screenshot. The example workflow name, six cartridges, model, run reference and progress are fictional. The actual available models, tools and cartridge count depend on your installation and imported workflow.
 
-### 1. Choose or add a workflow
+![One illustrated Magazine Simple 0.2.0 page with ten numbered arrows explaining the workflow library, model and tool setup, preparation and running status](docs/images/magazine-simple-0.2.0-illustrated-example.svg)
 
-![Magazine Simple workflow library showing Load your workflow, Refresh list and Add a workflow](docs/screenshots/magazine-simple-0.2.0-workflows.png)
+### What the numbered arrows mean
 
-Use **Add a workflow** to import a ZIP containing `magazine.yaml` and its prompt files. Or choose an existing shared workflow from the list and click **Load your workflow**. **Refresh list** updates the catalogue. Imported workflows are shared; individual runs and results remain private to their owner.
+1. **Load a workflow:** Select a saved workflow and choose **Load your workflow** to inspect its steps.
+2. **Refresh list:** Update the catalogue of available imported workflows.
+3. **Import a workflow:** Open **Add a workflow**, select a ZIP containing `magazine.yaml` and its referenced prompts, then add it. Imported workflows are shared; individual runs and results remain private to their owner.
+4. **Choose AI models:** Apply one model to the whole run or assign a different model to individual cartridges.
+5. **Select Terminal:** Choose an available **Native Open Terminal** connection for cartridge workers.
+6. **Choose tools:** Enable the tools this run needs. Magazine does **not** select them by default, and tool availability still depends on Open WebUI permissions.
+7. **Prepare workflow:** Save the model and tool choices. The run becomes **READY**; no cartridge has started.
+8. **Watch progress:** Once started, see the run reference, work folder, selected connections and completion count.
+9. **Inspect step status:** Cartridges appear in order with states such as waiting, running and finished. A finished result still needs independent review for correctness.
+10. **Control execution:** **Start workflow** begins a READY run; **Stop workflow** requests a safe stop; **Check progress** refreshes the status. Stop is not Pause/Resume.
 
-### 2. Select the AI model
+**Typical flow:** Add or choose workflow → Load → Choose models → Select Terminal and tools → Prepare → Start → Check progress or Stop.
 
-![Magazine Simple model selection showing one model for all 26 steps](docs/screenshots/magazine-simple-0.2.0-model.png)
-
-The setup panel lists every step in order. Choose **Use the same model for all steps** for a single-model run, or select models individually. The screenshot shows a local Qwen3.8 27B model; each run uses the models actually available in that Open WebUI installation.
-
-### 3. Choose Terminal and tools, then prepare
-
-![Magazine Simple showing Open Terminal and three selected tools with Prepare workflow](docs/screenshots/magazine-simple-0.2.0-tools.png)
-
-Select the available **Native Open Terminal** connection and only the tools the workflow needs. Tools are **not selected by default**. Click **Prepare workflow** to save your choices; **preparation does not start execution**.
-
-### 4. Start and monitor the run
-
-![Magazine Simple running page showing 26 cartridges, Start workflow, Stop workflow and Check progress](docs/screenshots/magazine-simple-0.2.0-run.png)
-
-The run panel shows its reference, work folder, selected Terminal/tools, per-step status and completion count. **Start workflow** begins execution, **Check progress** refreshes status, and **Stop workflow** requests a stop. Later cartridges wait their turn. A step marked finished means Magazine accepted its output, **not** that the feature was independently proven correct.
-
-The current local flow is:
-
-**Add/choose workflow → Load → Choose models → Select Terminal/tools → Prepare → Start → Check progress or Stop.**
+The illustration documents the newer local **Simple 0.2.0** interface. It is **not** the installation experience of the public beta.5 package described below.
 
 #### Historical beta.5 interface
 

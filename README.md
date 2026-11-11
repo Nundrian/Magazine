@@ -95,7 +95,7 @@ You'll still need to review the work and run any relevant external checks.
 
 ## Magazine Simple 0.2.0 — local interface preview
 
-These screenshots show the maintainer's current **Magazine Simple 0.2.0** page in Open WebUI. This is newer than the beta.5 interface provided by the public download on this page. The example is a 26-step Nebula Run workflow; its model selection and run are illustrative, not a benchmark result.
+These screenshots show the maintainer's current **Magazine Simple 0.2.0** page in Open WebUI. This is newer than the beta.5 interface provided by the public download on this page. The example is a 26-step Nebula Run workflow; its model selection and run are illustrative, not a benchmark result. Its imported workflow title still says “20 cartridges” because that older title was retained in the updated ZIP; the loaded workflow actually contains **26 steps**.
 
 ### 1. Choose or add a workflow
 

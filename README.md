@@ -212,19 +212,9 @@ deployment settings when adding mounts.
 
 ## Testing and evidence
 
-The beta.5 acceptance evidence records **989 passing regression tests**:
-611 core, 244 Function and 134 interface/sidebar cases. They cover execution
-and state, sequential routing, STOP/recovery, user ownership, persistence,
-ZIP validation/retention and Finished Work exports.
+**Magazine Simple 0.2.0 (current local interface):** The illustrated workflow page documents what the maintainer has shown in Open WebUI: importing or loading a workflow, choosing models and tools, preparing a run, and viewing execution progress. It is an interface demonstration, not an independent acceptance test. **No automated test total or release-wide acceptance claim is established here for Simple 0.2.0.**
 
-Separate beta.5 checks verified packaged installation, authentication and
-restart persistence on isolated stock Open WebUI 0.11.3. Windows Docker
-bind-mount tests ran two sequential cartridges through the real core with
-deterministic injected responses, not live inference. Release archives were
-checked for reproducibility and source parity.
-
-Real Bonsai inference/STOP and browser testing belong to the retained beta.4
-baseline; they weren't rerun as beta.5 live tests. The [testing summary](docs/TESTING.md) and [acceptance report](docs/ACCEPTANCE.md) distinguish these results and their limits. [Validation](docs/VALIDATION.md) explains how to run the source checks.
+**Earlier beta.5 (published source):** Its regression results belong to that older implementation and should not be taken as evidence for Simple 0.2.0. The archived [beta.5 testing summary](docs/TESTING.md), [acceptance report](docs/ACCEPTANCE.md) and [validation instructions](docs/VALIDATION.md) remain available for anyone evaluating the published beta.5 package.
 
 ## Current limitations
 

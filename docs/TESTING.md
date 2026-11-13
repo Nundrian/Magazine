@@ -35,3 +35,18 @@ A workflow marked **COMPLETED** has run through its cartridges and saved their c
 The customised Open WebUI Docker image is **not** an approved public binary release. The source and Function-only path have a separate acceptance and publication scope.
 
 Read [beta.5 acceptance](ACCEPTANCE.md), [validation instructions](VALIDATION.md), [STOP behaviour](STOP.md) and [security notes](SECURITY.md) for technical details and limitations.
+
+
+---
+
+## Magazine Simple 0.2.0-exec.5 — newer local evidence, 13 November 2026
+
+**This is a different codebase/version from the beta.5 suite above. Do not transfer its 989 passing cases to exec.5.**
+
+The maintainer's installation report records an in-place Function update preserving 178 existing run-folder files by hash, plus one completed **live three-cartridge** acceptance-line workflow with `qwen3-coder-udq4-native:latest`, Open Terminal and no extra tools.
+
+Steps 2 and 3 made real `run_command` calls, the declared handover was verified (`result.json`: `match: true`), and the step-2 inline DONE branch was exercised. This is direct evidence for a specific execution/handover and completion-path scenario — not an all-model or all-workflow success claim.
+
+The previous-work deletion UI was checked in Chromium for placement, selection and cancellation with no delete request. **No live deletion was performed.** Firefox controls and the Open WebUI container logs were not verified.
+
+For detailed run identity, abbreviated source/export hashes and source/release boundaries, read [the exec.5 installed-version record](SIMPLE_0.2.0_EXEC5.md). Its public runner source was not available for a fresh automated regression run in this documentation update. Historical persistent-fault regression scenarios should be retained as test *cases* and specifically rerun on any future published Simple build.

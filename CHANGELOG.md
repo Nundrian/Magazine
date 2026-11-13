@@ -1,5 +1,20 @@
 # Changelog
 
+## Magazine Simple 0.2.0-exec.5 — locally installed, 13 November 2026
+
+**Local installation and documentation update — not a public runner release.** The newer Open WebUI Simple Function was updated in place, keeping its Function ID and existing run data. This repository now documents its streamlined library, model-assignment, Terminal/tool selection, READY/start separation, ledger, run history and deletion controls.
+
+- A live three-cartridge acceptance-line run finished using Qwen3 Coder, real Open Terminal calls in steps 2 and 3 and verified declared file handover (`result.json`: `match: true`).
+- The inline DONE completion branch was exercised live.
+- The in-place update preserved 178 pre-existing run-folder files with matching hashes.
+- Previous-work deletion controls were examined in Chromium; the live deletion was not executed. Firefox interactions and container logs remain unchecked.
+- Added a complete [illustrated HTML interface guide](docs/guide/index.html), split into four annotated sections; updated the workflow/handover diagrams.
+- Added the supplied **Magazine Simple Sidebar Launcher 0.1.0** source for Open WebUI 0.12.5. The launcher points to `/magazine-simple` and remains separate from the runner.
+
+**Not published with this update:** the verified exec.5 Function source or installable runner ZIP. The public beta.5 download remains unchanged. See [exec.5 evidence](docs/SIMPLE_0.2.0_EXEC5.md) and [launcher notes](docs/SIDEBAR_LAUNCHER.md).
+
+---
+
 Magazine is a beta proof of concept. This changelog records the main demonstrated changes and avoids treating proposed features as completed work.
 
 ## 0.1.0-beta.5 — 14 October 2026

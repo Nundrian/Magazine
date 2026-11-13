@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="dark">
+<title>Magazine Simple 0.2.0-exec.5 — illustrated interface</title>
+<meta name="description" content="Visual walkthrough of the Magazine Simple 0.2.0-exec.5 Open WebUI interface, based on 13 November 2026 screenshots.">
+<link rel="stylesheet" href="guide.css"><script defer src="guide.js"></script></head>
+<body><a class="skip" href="#main">Skip to content</a>
+<header class="site-header"><nav class="nav" aria-label="Navigation"><a href="#top" class="logo">Magazine<span style="color:#a2c5ff">.</span></a><div class="navlinks"><a href="#how">How it works</a><a href="#interface">Interface</a><a href="#engineering">For engineers</a><a href="https://github.com/Nundrian/Magazine">GitHub</a></div></nav></header>
+<main id="main">
+<section class="hero" id="top"><div class="wrap"><div class="eyebrow">Open WebUI • illustrated guide • 13 November 2026</div>
+<h1>Big projects. Smaller tasks. One orderly workflow.</h1>
+<p>Magazine breaks a planned project into steps called cartridges. Each runs in a fresh AI chat with an assigned model. Magazine records the output, hands over declared files to later steps and keeps the sequence organised.</p>
+<div class="tags"><span class="tag mint">Locally installed: Simple 0.2.0-exec.5</span><span class="tag">Sidebar Launcher 0.1.0</span><span class="tag">Open WebUI 0.12.5</span><span class="tag">Public download: older beta.5</span></div>
+<div class="hero-actions"><a class="action" href="#interface">Explore the interface</a><a class="action secondary" href="#engineering">Engineering details</a></div>
+<p class="caveat">This is a recreated, self-contained documentation page, not a live Magazine session. The sample buttons that would change server data are deliberately non-functional. The model-choice demonstration is interactive.</p>
+</div></section>
+<section class="section" id="how"><div class="wrap"><div class="eyebrow">Simple by design</div><h2>One run, step by step</h2>
+<p class="intro">Create or import a workflow, choose one model for every step or assign models individually, choose a Terminal and any tools needed, prepare the run, then start it explicitly.</p>
+<div class="flow" role="img" aria-label="Workflow process: load workflow, configure models and tools, prepare, execute sequential steps, and review results.">
+<div class="flow-node"><b>1. Load</b><small>Workflow ZIP and step instructions</small></div><span class="flow-arrow" aria-hidden="true">→</span>
+<div class="flow-node"><b>2. Configure</b><small>Models, Terminal, tools</small></div><span class="flow-arrow" aria-hidden="true">→</span>
+<div class="flow-node"><b>3. Prepare</b><small>READY, not running</small></div><span class="flow-arrow" aria-hidden="true">→</span>
+<div class="flow-node"><b>4. Run</b><small>Fresh chats; saved output and declared handover</small></div><span class="flow-arrow" aria-hidden="true">→</span>
+<div class="flow-node"><b>5. Review</b><small>Ledger, history and results ZIP</small></div></div>
+<p class="diagram-note">“Finished” means execution ended and the result was saved; it does not establish that the AI's answer is correct.</p></div></section>
+<section class="section" id="interface"><div class="wrap"><div class="eyebrow">Interface walkthrough</div><h2>What each control does</h2><p class="intro">Based on the supplied installed-interface screenshots. Each stage recreates its part of the page with numbered, arrow-linked explanatory notes. For clarity, the screenshots themselves are not reproduced and the example list is shortened.</p>
+
+<div id="workflows" class="demo-head"><h3>01 — Your workflows</h3><p>Browse, load and import</p></div>
+<div class="walk-stage"><div class="screen">
+<div class="screen-title"><strong>Magazine</strong><div class="inline-fields"><label class="small" for="appearance">Appearance</label><select id="appearance" class="field slim"><option>Follow Open WebUI</option><option>Dark</option><option>Light</option></select></div></div>
+<div class="app-panel"><div class="screen-title"><h4>Your workflows</h4><span class="pill">1 workflow</span></div>
+<label class="field-label" for="workflow">Workflow</label><div class="inline-fields"><select class="field grow" id="workflow"><option>Acceptance line (3-step, conflict-free) — 3 steps</option></select><span class="fake-btn primary">Load your workflow</span><span class="fake-btn">Refresh list</span></div>
+<p class="micro">Select a workflow, then choose Load your workflow.</p><p class="success">Workflow loaded. Open Workflow steps below to choose models.</p>
+<details open><summary>Delete workflows</summary><p class="micro">Tick workflows to remove from the list. Previous work and its results are kept.</p>
+<div class="delete-list"><label><input type="checkbox"> Acceptance line (3-step, conflict-free)</label></div>
+<div class="inline-fields"><span class="fake-btn tiny">Select all</span><span class="fake-btn tiny">Clear all</span><span class="fake-btn tiny danger">Delete selected</span><span class="fake-btn tiny">Delete all workflows</span></div></details>
+<details open><summary>Add a workflow</summary><label class="field-label" for="workflow-zip">Workflow ZIP</label><input type="file" id="workflow-zip" accept=".zip"><p class="micro">Local illustrative control only. Nothing uploads.</p>
+<label class="field-label" for="short-name">Short name (optional)</label><input id="short-name" class="field" style="max-width:280px" placeholder="Derived from ZIP filename">
+<p><span class="fake-btn">Add a workflow</span></p><p class="micro">Added workflows are shared; your runs and results remain private.</p></details></div></div>
+<aside class="note-column" aria-label="Workflow-control explanations">
+<div class="callout"><h4><span class="num">1</span>Appearance ▾</h4><p>Follow Open WebUI's appearance or choose a separate light or dark theme.</p></div>
+<div class="callout"><h4><span class="num">2</span>Workflow ▾</h4><p>Lists available workflow definitions. Select one, then <strong>Load your workflow</strong>. <strong>Refresh list</strong> updates the library.</p></div>
+<div class="callout"><h4><span class="num">3</span>Delete workflows ▾</h4><p>Expand to choose definitions to remove. These controls remove workflows from the list, <strong>not</strong> their saved past runs.</p></div>
+<div class="callout"><h4><span class="num">4</span>Add a workflow ▾</h4><p>Expand to import a ZIP and optionally name it. An imported workflow is available to users; their individual results remain private.</p></div>
+</aside></div>
+
+<div id="setup" class="demo-head"><h3>02 — Set up</h3><p>Model assignment, Terminal and tools</p></div>
+<div class="walk-stage"><div class="screen"><div class="app-panel">
+<div class="screen-title"><div><h4 style="margin-bottom:0">Set up</h4><p class="micro">3 steps run in order, each in a fresh chat.</p></div><span class="pill neutral">Acceptance line</span></div>
+<details open><summary><strong>Workflow steps — 3</strong> <span class="step-pill">in order</span></summary>
+<label class="field-label" for="model-mode">AI model selection</label><select id="model-mode" class="field" style="max-width:365px"><option value="per-step">Choose a model for each step</option><option value="same">Use the same model for all steps</option></select>
+<div class="mode-panel" id="per-step"><div class="model-top" style="margin-top:10px">
+<div class="inline-fields"><button type="button" class="fake-btn tiny" id="all-steps">Select all</button><button type="button" class="fake-btn tiny" id="clear-steps">Clear selection</button><strong class="micro" id="selected-count">0 of 3 selected</strong></div>
+<label class="field-label" for="bulk-model" style="margin-top:12px">AI model for the selected steps</label>
+<div class="inline-fields"><select class="field slim grow" id="bulk-model"><option value="">Choose an AI model...</option><option>qwen3-coder-udq4-native:latest</option><option>bonsai-2:27b</option><option>hf.co/unsloth/Qwen3.8-27B-GGUF:UD-Q4_K_XL</option></select><button type="button" class="fake-btn tiny" id="apply-model">Apply to selected</button></div></div>
+<div class="cartridge"><label><input type="checkbox" data-select-step value="1"> <b>1</b><br><strong class="small">c01_value</strong></label><div><label class="micro" for="model-1">AI model for Step 1</label><select class="field slim model-selector" id="model-1"><option value="">Choose an AI model...</option><option>qwen3-coder-udq4-native:latest</option><option>bonsai-2:27b</option><option>hf.co/unsloth/Qwen3.8-27B-GGUF:UD-Q4_K_XL</option></select></div><div class="task"><b>ROLE:</b> Careful assistant.<p><b>TASK:</b> Generate a short greeting.</p><p><b>OUTPUT:</b> One-line JSON.</p></div></div>
+<div class="cartridge"><label><input type="checkbox" data-select-step value="2"> <b>2</b><br><strong class="small">c02_file</strong></label><div><label class="micro" for="model-2">AI model for Step 2</label><select class="field slim model-selector" id="model-2"><option value="">Choose an AI model...</option><option>qwen3-coder-udq4-native:latest</option><option>bonsai-2:27b</option><option>hf.co/unsloth/Qwen3.8-27B-GGUF:UD-Q4_K_XL</option></select></div><div class="task"><b>ROLE:</b> Careful assistant with Terminal.<p><b>TASK:</b> Save the prior greeting to a file.</p><p><b>INPUT:</b> Earlier-step result.</p></div></div>
+<div class="cartridge"><label><input type="checkbox" data-select-step value="3"> <b>3</b><br><strong class="small">c03_verify</strong></label><div><label class="micro" for="model-3">AI model for Step 3</label><select class="field slim model-selector" id="model-3"><option value="">Choose an AI model...</option><option>qwen3-coder-udq4-native:latest</option><option>bonsai-2:27b</option><option>hf.co/unsloth/Qwen3.8-27B-GGUF:UD-Q4_K_XL</option></select></div><div class="task"><b>ROLE:</b> Careful assistant with Terminal.<p><b>TASK:</b> Verify the handed-over file contents and record the result.</p></div></div>
+</div>
+<div class="mode-panel" id="same-model" hidden><label class="field-label" for="shared-model" style="margin-top:12px">AI model for all steps</label><select id="shared-model" class="field" style="max-width:490px"><option value="">Choose an AI model...</option><option>qwen3-coder-udq4-native:latest</option><option>bonsai-2:27b</option><option>hf.co/unsloth/Qwen3.8-27B-GGUF:UD-Q4_K_XL</option></select>
+<div class="cartridge"><b>1 · c01_value</b><span class="small">Greeting</span><span class="small">Uses the single selected model</span></div><div class="cartridge"><b>2 · c02_file</b><span class="small">Save file</span><span class="small">Uses the single selected model</span></div><div class="cartridge"><b>3 · c03_verify</b><span class="small">Verify file</span><span class="small">Uses the single selected model</span></div>
+</div><p id="demo-feedback" class="micro" aria-live="polite">Try the selection dropdown above to see how the real interface changes.</p></details>
+<details><summary><strong>Model information</strong></summary><p class="micro"><strong>Available models (reference only)</strong>. Choose using the selection controls above.</p>
+<div class="reference-list"><div>qwen3-coder-udq4-native:latest</div><div>hf.co/unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:UD-Q4_K_XL</div><div>bonsai-2:27b</div><div>hf.co/AtomicChat/Ornith-1.5-35B-A3B-GGUF:Q4_K_M</div><div>hf.co/unsloth/Qwen3.8-27B-GGUF:UD-Q4_K_XL</div></div></details>
+<h5>Terminal for cartridge workers</h5><div class="inline-fields"><label class="small" for="terminal">Native Open Terminal connection</label><select class="field slim" style="width:auto" id="terminal"><option>Open Terminal</option><option>No terminal</option></select></div><p class="micro">Choose once for this run. Every step uses this Terminal.</p>
+<div class="screen-title" style="margin-top:18px"><h5 style="margin:0">Tools for this workflow</h5><span class="pill">4 found</span></div>
+<div class="inline-fields"><span class="micro">Tools selected: 0 of 4</span><span class="fake-btn tiny">Select all</span><span class="fake-btn tiny">Clear all</span></div>
+<div class="tool-list" style="margin-top:9px">
+<label class="tool"><input type="checkbox"><span><b>Browser</b><small>Local browser test bridge</small></span></label>
+<label class="tool"><input type="checkbox"><span><b>Magazine Auto Approval — Standard</b><small>Authorised development execution</small></span></label>
+<label class="tool"><input type="checkbox"><span><b>Fresh worker</b><small>Isolated LLM conversations</small></span></label>
+<label class="tool"><input type="checkbox"><span><b>Development Toolkit</b><small>Development toolkit</small></span></label></div>
+<p class="micro">No tools are selected by default. Selected tools are available to every step, subject to host/model permissions.</p><p><span class="fake-btn primary">Prepare workflow</span></p><p class="micro">Saves the choices for this run. Nothing starts until you select Start workflow.</p>
+</div></div>
+<aside class="note-column" aria-label="Model and tool explanations">
+<div class="callout"><h4><span class="num">5</span>Workflow steps ▾</h4><p>Expand to read each cartridge's instructions and assign its model; collapse to hide the step cards. Steps execute in the listed order.</p></div>
+<div class="callout"><h4><span class="num">6</span>AI model selection ▾</h4><p>Switches between <strong>one model for all steps</strong> and <strong>individual models</strong>. The page changes which selectors are visible.</p></div>
+<div class="callout"><h4><span class="num">7</span>Bulk model dropdown ▾</h4><p>In per-step mode tick any rows, choose a model, and select <strong>Apply to selected</strong>. Individual dropdowns remain available.</p></div>
+<div class="callout"><h4><span class="num">8</span>Model information ▾</h4><p>Expandable list of models for reference. It does not assign a model; the dropdown controls do.</p></div>
+<div class="callout"><h4><span class="num">9</span>Terminal connection ▾</h4><p>Choose Open Terminal or no Terminal for the run. The connection is shared across its steps.</p></div>
+<div class="callout"><h4><span class="num">10</span>Tools and Prepare</h4><p>Tools start <strong>unticked</strong>. Select only what is needed. <strong>Prepare workflow</strong> creates READY work without starting it.</p></div>
+</aside></div>
+
+<div id="run" class="demo-head"><h3>03 — Run workflow</h3><p>READY is different from running</p></div>
+<div class="walk-stage"><div class="screen"><div class="app-panel"><h4>Run workflow</h4><div class="app-panel" style="background:#202e45">
+<div class="screen-title"><h4>Acceptance line (3-step, conflict-free)</h4><span class="pill neutral">Ready to start</span></div>
+<p class="small">Prepared: example · Reference: EXAMPLE-001 · Work folder: /workspace/magazine-simple/example-run</p>
+<p class="small">Terminal: open-terminal · Tools: none</p><p>0 of 3 steps finished.</p><div class="meter" role="img" aria-label="Zero of three steps finished"></div>
+<ol class="steps"><li>c01_value — waiting · Qwen3 Coder</li><li>c02_file — waiting · Qwen3 Coder</li><li>c03_verify — waiting · Qwen3 Coder</li></ol>
+<div class="inline-fields" style="margin:20px 0"><span class="fake-btn primary">Start workflow</span><span class="fake-btn danger">Stop workflow</span><span class="fake-btn">Check progress</span></div>
+<details open><summary>Ledger</summary><div style="overflow:auto"><table class="ledger"><thead><tr><th>#</th><th>Step</th><th>Attempt</th><th>Model</th><th>Status</th><th>Files produced</th></tr></thead><tbody><tr><td>1</td><td>c01_value</td><td>—</td><td>Qwen3 Coder</td><td>pending</td><td>—</td></tr><tr><td>2</td><td>c02_file</td><td>—</td><td>Qwen3 Coder</td><td>pending</td><td>—</td></tr><tr><td>3</td><td>c03_verify</td><td>—</td><td>Qwen3 Coder</td><td>pending</td><td>—</td></tr></tbody></table></div><p class="micro">The same ledger is saved as LEDGER.md in the work folder and download.</p></details>
+</div></div></div>
+<aside class="note-column" aria-label="Run explanations">
+<div class="callout"><h4><span class="num">11</span>READY status</h4><p>Displays the prepared reference, work folder, settings and waiting cartridges. Preparation did not start inference.</p></div>
+<div class="callout"><h4><span class="num">12</span>Start, Stop, Check progress</h4><p>Start begins execution; Stop requests a safe stop; Check progress refreshes status. Stop is not a pause/resume feature.</p></div>
+<div class="callout"><h4><span class="num">13</span>Ledger ▾</h4><p>Expand for a per-cartridge audit trail: attempt, model, status, start/finish, chat and produced files. A saved LEDGER.md is also provided.</p></div>
+</aside></div>
+
+<div id="results" class="demo-head"><h3>04 — Results and previous work</h3><p>History, saved results and deletion</p></div>
+<div class="walk-stage"><div class="screen"><div class="app-panel"><h4>Results and previous work</h4>
+<label class="field-label" for="history">Previous work</label>
+<div class="inline-fields"><select class="field slim grow" id="history"><option>Acceptance line · Example run · Finished</option><option>Acceptance line · Earlier run · Stopped — needs attention</option><option>Queue test · Finished</option></select><span class="fake-btn tiny">View previous work</span><span class="fake-btn tiny">Refresh list</span></div>
+<details open><summary>Delete previous work</summary><p class="micro">Tick the previous work to delete. Its ledger, saved replies, results and work files are removed for good. Chats stay in Open WebUI. Running/queued work cannot be deleted.</p>
+<div class="result-list"><label><input type="checkbox"> Acceptance line · Example run · Finished</label><label><input type="checkbox"> Acceptance line · Earlier run · Stopped — needs attention</label><label><input type="checkbox"> Queue test · Finished</label></div>
+<div class="inline-fields" style="margin-top:12px"><span class="fake-btn tiny">Select all</span><span class="fake-btn tiny">Clear all</span><span class="fake-btn tiny danger">Delete selected</span><span class="fake-btn tiny">Delete all previous work</span></div></details>
+<p class="success small">Results for Acceptance line (Finished).</p><span class="fake-btn">Download results ZIP</span></div></div>
+<aside class="note-column" aria-label="Results explanations">
+<div class="callout"><h4><span class="num">14</span>Previous work dropdown ▾</h4><p>Choose an earlier run, then View previous work to inspect it. Refresh list reloads the history.</p></div>
+<div class="callout"><h4><span class="num">15</span>Delete previous work ▾</h4><p>Expand to remove selected saved runs. Unlike deleting workflow definitions, this permanently deletes the saved run data after confirmation.</p></div>
+<div class="callout warning"><h4><span class="num">16</span>Deletion boundary</h4><p>The deletion UI was checked in Chromium, but actual live deletion was <strong>not performed</strong> during the exec.5 acceptance.</p></div>
+<div class="callout"><h4><span class="num">17</span>Download results ZIP</h4><p>Export available results. A finished status is not an automatic correctness assessment.</p></div>
+</aside></div>
+</div></section>
+<section class="section" id="engineering"><div class="wrap"><div class="eyebrow">A deeper look</div><h2>For coders and engineers</h2><p class="intro">Expand the technical details when needed. For complete provenance, see the <a href="../SIMPLE_0.2.0_EXEC5.md">exec.5 technical record</a> and the <a href="../SIDEBAR_LAUNCHER.md">launcher guide</a>.</p>
+<div class="tech">
+<details><summary>Installed version versus published source</summary><p><strong>Installed locally:</strong> Magazine Simple 0.2.0-exec.5, served at <code>/magazine-simple</code>, and Sidebar Launcher 0.1.0 on Open WebUI 0.12.5. The launcher adds a navigation item in a new tab; it does not run workflows.</p><p><strong>Published public Function:</strong> the older 0.1.0-beta.5 under <code>/magazine</code>. It is not equivalent to exec.5. The updated runner's source has not been supplied for publication with this guide.</p></details>
+<details><summary>Verified exec.5 live acceptance</summary><p>On 13 November 2026, the existing Function was updated in place. Pre-existing 178 run-folder files remained hash-identical. A live three-step run <code>20261113-093654-9352d6</code> completed with <code>qwen3-coder-udq4-native:latest</code>, Open Terminal and no extra tools. Steps 2 and 3 invoked real <code>run_command</code> calls; the handover was verified and <code>result.json</code> reported <code>match: true</code>. The inline DONE completion path was exercised in step 2.</p><p>The Chromium deletion interface was inspected but no live deletion was performed. Firefox interactions and host container logs were not verified.</p></details>
+<details><summary>Runner sequence and file handover</summary><pre>Workflow ZIP → import and validate → assign models
+    ↓ choose Terminal and tools
+Prepare → READY → explicit Start
+    ↓
+Step 1: fresh chat → save reply/output
+    ↓ declared file handover
+Step 2: fresh chat → run Terminal command → save files
+    ↓ declared file handover
+Step 3: fresh chat → verify file contents → save result
+    ↓
+Ledger + previous-work history + results ZIP</pre><p>Do not infer a successful external task solely from a finished cartridge, or call older beta.5 tests a fresh exec.5 pass.</p></details>
+<details><summary>What the Sidebar Launcher does</summary><p>Launcher 0.1.0 injects a Magazine navigation link pointing to <code>/magazine-simple</code> via Open WebUI's static <code>loader.js</code>. It opens in a separate tab and does not request an API token or execute a cartridge. Loader backups and installation metadata are kept under <code>DATA_DIR/magazine-simple/sidebar-launcher/</code>. Read the <a href="../SIDEBAR_LAUNCHER.md">security and compatibility notes</a> before installing.</p></details>
+<details><summary>Source identity and distribution limits</summary><p>Installed Function code: SHA-256 prefix/suffix <code>400f8bf4…1309</code>, 111,367 bytes. Served <code>page.html</code>: <code>b1b41a55…2f97</code>. These are abbreviated identifiers from the local installation report, not downloadable artefact hashes. Current distribution in this repository remains beta.5; the local exec.5 build is documented but not included as an installer.</p></details>
+</div>
+<div class="disclaimer">This illustrated website is documentation only. It does not make Open WebUI calls, grant tool permissions, install a Function, or alter stored workflow data.</div>
+</div></section></main>
+<footer class="footer"><div class="wrap">Magazine — independent local-LLM workflow experiment · <a href="https://github.com/Nundrian/Magazine">Source repository</a> · <a href="../SIMPLE_0.2.0_EXEC5.md">Technical record</a> · Interface reference: 13 November 2026.</div></footer>
+</body></html>

@@ -55,7 +55,6 @@ A workflow can contain as many cartridges as its author designs, subject to prac
 | **Magazine Simple runner** | **0.2.0-exec.5** | [Exact installed-source file](integrations/open_webui/function/magazine_simple_exec5.py) now published for inspection and development. Locally installed and live-tested; **no separately verified public installer or clean-install acceptance**. Page: `/magazine-simple`. |
 | **Simple Sidebar Launcher** | **0.1.0** | [Separate launcher source](integrations/open_webui/function/magazine_simple_sidebar_launcher.py). Adds a link opening `/magazine-simple` in a new tab on the tested Open WebUI 0.12.5 host; it does **not** run cartridges. |
 | **Earlier Magazine Function** | 0.1.0-beta.5 | [Historical Function-only ZIP](downloads/Magazine-0.1.0-beta.5-FunctionOnly.zip) for its accepted Open WebUI 0.11.3 baseline, at `/magazine`. **Not an exec.5 update.** |
-| **Pi Web UI edition** | Separate development path | [Pi notes](pi-web-ui/README.md). Open WebUI Functions cannot be installed in Pi directly. |
 
 The original Docker-patched sidebar integration remains in [the historical source](integrations/open_webui/frontend/README.md) for future reference. Its custom Docker image is **not** an approved public binary release. Do not confuse that integration with the current independent Sidebar Launcher.
 

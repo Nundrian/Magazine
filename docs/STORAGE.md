@@ -1,5 +1,7 @@
 # Storage setup
 
+> **Historical documentation — Magazine 0.1.0-beta.5 / Open WebUI 0.11.3.** This page describes the earlier implementation and is retained for reference; it is **not** the current installation, security, storage or behaviour guide for Magazine Simple **0.2.0-exec.5**. For the current Open WebUI implementation, see [Magazine Simple exec.5](SIMPLE_0.2.0_EXEC5.md) and the [main README](../README.md).
+
 Magazine beta.5 adds two export destinations without moving or migrating
 Open WebUI's existing data volume. Supported runtime: Open WebUI 0.11.3,
 single Linux backend (including Docker Desktop on Windows).

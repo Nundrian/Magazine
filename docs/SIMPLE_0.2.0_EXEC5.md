@@ -12,6 +12,19 @@ The uploaded source was byte-matched to the local installation record before pub
 
 [Main README](../README.md) · [Actual-interface visual guide](guide/index.html) · [Launcher notes](SIDEBAR_LAUNCHER.md) · [Historical testing](TESTING.md)
 
+## Source code map
+
+| Location | Purpose | Version scope |
+| --- | --- | --- |
+| [`integrations/open_webui/function/magazine_simple_exec5.py`](../integrations/open_webui/function/magazine_simple_exec5.py) | Self-contained Magazine Simple Event Function: current runner, page, API routes and engine | **0.2.0-exec.5** — the locally accepted, source-matched implementation |
+| [`integrations/open_webui/function/magazine_simple_sidebar_launcher.py`](../integrations/open_webui/function/magazine_simple_sidebar_launcher.py) | Independent navigation-only Sidebar Launcher | **0.1.0** (for Open WebUI 0.12.5) |
+| [`integrations/open_webui/function/magazine_ef.py`](../integrations/open_webui/function/magazine_ef.py) and [`magazine/`](../magazine/) | Previous, larger Function and execution core; retained to support historical source and releases | **Legacy beta.5**, not the Simple runner |
+| [`tests/`](../tests/) and [`integrations/open_webui/function/tests/`](../integrations/open_webui/function/tests/) | Historical core, Function and interface regressions | **Legacy beta.5 tests**; not an exec.5 acceptance suite |
+| [`release/`](../release/) and [`scripts/`](../scripts/) | Historical release manifests, packaging and verification scripts | Currently target **beta.5**; do not treat their passing checks as exec.5 validation |
+| [`docs/guide/`](guide/) and [`docs/images/`](images/) | Illustrated interface documentation (not functional runner code) | **Simple exec.5 visual guide** |
+
+For the historical beta.5 installer and storage model, follow the explicitly marked legacy documents. The Simple installation record and technical details are on **this page**.
+
 ## Purpose and design boundaries
 
 Magazine Simple is a **pre-authored, sequential LLM workflow executor**, not a planner or review agent. Each cartridge is a saved, ordinary Open WebUI chat with a selected model and the run's optional Terminal and tool IDs. A cartridge receives its own prompt, any explicitly declared file inputs and any requested JSON values from prior replies. Chats are **kept** in Open WebUI.

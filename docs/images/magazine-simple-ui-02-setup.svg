@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="1100" viewBox="0 0 1500 1100" role="img" aria-labelledby="t d"><title id="t">Set up</title><desc id="d">Per-step models, Terminal and tools. Faithful diagram of the latest locally installed interface from user-provided screen references; not an original screenshot.</desc><defs><marker id="arr" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8" fill="#63a9ff"/></marker></defs><rect width="1500" height="1100" fill="#0c1322"/><rect x="22" y="19" width="1005" height="1060" rx="17" fill="#111827" stroke="#62718b" stroke-width="1.5"/><text x="43" y="51" font-size="24" font-weight="700" font-family="Arial,sans-serif" fill="#fff">Magazine</text><text x="1074" y="59" font-size="25" font-family="Arial,sans-serif" font-weight="700" fill="#c7ddff">Set up</text><text x="1074" y="87" font-size="15" font-family="Arial,sans-serif" fill="#a7bbd6">Annotations follow the visible controls</text>
-<rect x="42" y="83" width="958" height="968" rx="12" fill="#182234" stroke="#71819b" stroke-width="1.3"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="1260" viewBox="0 0 1500 1260" role="img" aria-labelledby="t d"><title id="t">Set up</title><desc id="d">Per-step models, Terminal and tools. Faithful diagram of the latest locally installed interface from user-provided screen references; not an original screenshot.</desc><defs><marker id="arr" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8" fill="#63a9ff"/></marker></defs><rect width="1500" height="1100" fill="#0c1322"/><rect x="22" y="19" width="1005" height="1220" rx="17" fill="#111827" stroke="#62718b" stroke-width="1.5"/><text x="43" y="51" font-size="24" font-weight="700" font-family="Arial,sans-serif" fill="#fff">Magazine</text><text x="1074" y="59" font-size="25" font-family="Arial,sans-serif" font-weight="700" fill="#c7ddff">Set up</text><text x="1074" y="87" font-size="15" font-family="Arial,sans-serif" fill="#a7bbd6">Annotations follow the visible controls</text>
+<rect x="42" y="83" width="958" height="1120" rx="12" fill="#182234" stroke="#71819b" stroke-width="1.3"/>
 <text x="62" y="119" font-size="21" font-weight="700" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">Set up</text>
 <text x="65" y="155" font-size="14" font-weight="400" fill="#c0ccde" font-family="Arial,Helvetica,sans-serif">3 steps run in order, each in a fresh chat.</text>
 <text x="786" y="136" font-size="12" font-weight="400" fill="#c0ccde" font-family="Arial,Helvetica,sans-serif">Acceptance line (3-step, conflict-free)</text>
@@ -113,6 +113,16 @@
 <text x="1096" y="771" font-size="15" font-weight="400" fill="#4d6581" font-family="Arial,Helvetica,sans-serif">One Terminal for this run;</text>
 <text x="1096" y="791" font-size="15" font-weight="400" fill="#4d6581" font-family="Arial,Helvetica,sans-serif">tools begin unselected.</text>
 <path d="M1072 751 L1044 751 L1044 924 L1008 924" fill="none" stroke="#63a9ff" stroke-width="3" marker-end="url(#arr)"/>
-<text x="40" y="1076" font-size="14" font-weight="400" fill="#8da6c9" font-family="Arial,Helvetica,sans-serif">Appearance, line spacing and control names follow the supplied installed-interface references</text>
-<text x="1320" y="1076" font-size="13" font-weight="700" fill="#92beef" font-family="Arial,Helvetica,sans-serif">EXEC.5 · OPEN WEBUI</text>
+<rect x="65" y="1062" width="194" height="51" rx="8" fill="#a6c6ff" stroke="#a6c6ff" stroke-width="1.3"/>
+<text x="79" y="1094" font-size="16" font-weight="700" fill="#101b2b" font-family="Arial,Helvetica,sans-serif">Prepare workflow</text>
+<text x="65" y="1148" font-size="15" font-weight="400" fill="#c0ccde" font-family="Arial,Helvetica,sans-serif">Save model, Terminal and tool choices. No step starts until you select Start workflow.</text>
+<rect x="1073" y="860" width="396" height="102" rx="12" fill="#f1f7ff" stroke="#d2e0f1" stroke-width="1.3"/>
+<circle cx="1096" cy="885" r="17" fill="#276bcb"/>
+<text x="1091" y="891" font-size="17" font-weight="700" fill="#fff" font-family="Arial,Helvetica,sans-serif">7</text>
+<text x="1124" y="890" font-size="18" font-weight="700" fill="#1c3a60" font-family="Arial,Helvetica,sans-serif">Prepare workflow</text>
+<text x="1096" y="918" font-size="15" font-weight="400" fill="#4d6581" font-family="Arial,Helvetica,sans-serif">Creates the READY run.</text>
+<text x="1096" y="938" font-size="15" font-weight="400" fill="#4d6581" font-family="Arial,Helvetica,sans-serif">It does not begin execution.</text>
+<path d="M1072 898 L1044 898 L1044 1086 L1008 1086" fill="none" stroke="#63a9ff" stroke-width="3" marker-end="url(#arr)"/>
+<text x="40" y="1236" font-size="14" font-weight="400" fill="#8da6c9" font-family="Arial,Helvetica,sans-serif">Appearance, line spacing and control names follow the supplied installed-interface references</text>
+<text x="1320" y="1236" font-size="13" font-weight="700" fill="#92beef" font-family="Arial,Helvetica,sans-serif">EXEC.5 · OPEN WEBUI</text>
 </svg>

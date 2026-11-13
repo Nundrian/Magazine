@@ -80,6 +80,8 @@ Saved runs are **owner-scoped**, while the **workflow library is shared** and an
 The exact [exec.5 source](integrations/open_webui/function/magazine_simple_exec5.py) is 111,367 bytes and matches the local installed SHA-256:
 `400f8bf4739bac012ce5c0036eb0ecbcf098695e2a9726a00eef84df934d1309`.
 
+**Source code map:** [Current Simple runner](integrations/open_webui/function/magazine_simple_exec5.py) · [Sidebar Launcher](integrations/open_webui/function/magazine_simple_sidebar_launcher.py) · [Legacy beta.5 Function](integrations/open_webui/function/magazine_ef.py) · [Legacy execution core](magazine/) and [tests](tests/). The legacy core and test suite are **not** the exec.5 implementation or its regression suite.
+
 **[Read the engineering reference](docs/SIMPLE_0.2.0_EXEC5.md)** for API routes, storage layout, YAML examples, limits, completion parsing, stop/restart semantics, queue durability, valves, security boundaries and verification evidence.
 
 </details>
@@ -88,4 +90,4 @@ The exact [exec.5 source](integrations/open_webui/function/magazine_simple_exec5
 
 Magazine is published under the [MIT licence](LICENSE). Open WebUI and other software retain their own licences. Review workflows and selected tools before running them. For the latest Simple version, source identity and one local acceptance workflow have been verified; no broader production-readiness certification is claimed.
 
-[Security notes](docs/SECURITY.md) · [Sidebar Launcher details](docs/SIDEBAR_LAUNCHER.md) · [Illustrated guide](docs/guide/index.html)
+[Historical beta.5 security notes](docs/SECURITY.md) · [Sidebar Launcher details](docs/SIDEBAR_LAUNCHER.md) · [Illustrated guide](docs/guide/index.html)

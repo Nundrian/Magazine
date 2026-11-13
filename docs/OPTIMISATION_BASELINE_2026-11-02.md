@@ -1,5 +1,7 @@
 # Magazine beta.10 RC2: frozen local baseline and optimisation brief
 
+> **Archived development snapshot — 2 November 2026.** References below to the "active" beta.10 RC2 installation and the repository's contents describe their status **at that date**, not the current release. The source-matched Magazine Simple **0.2.0-exec.5** implementation is now documented separately. For the current Open WebUI implementation, see [Magazine Simple exec.5](SIMPLE_0.2.0_EXEC5.md) and the [main README](../README.md).
+
 Status: **planning / not yet implemented**. Recorded 2 November 2026.
 
 ## Release boundary

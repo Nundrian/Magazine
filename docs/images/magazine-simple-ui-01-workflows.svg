@@ -14,7 +14,7 @@
 <rect x="730" y="192" width="174" height="48" rx="8" fill="#a6c6ff" stroke="#a6c6ff" stroke-width="1.3"/>
 <text x="743" y="222" font-size="16" font-weight="700" fill="#101b2b" font-family="Arial,Helvetica,sans-serif">Load your workflow</text>
 <rect x="916" y="192" width="91" height="48" rx="8" fill="#111827" stroke="#778399" stroke-width="1.3"/>
-<text x="929" y="222" font-size="16" font-weight="550" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">Refresh</text>
+<text x="924" y="222" font-size="13" font-weight="550" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">Refresh list</text>
 <text x="64" y="267" font-size="15" font-weight="400" fill="#c0ccde" font-family="Arial,Helvetica,sans-serif">Select a workflow, then choose Load your workflow.</text>
 <text x="64" y="294" font-size="16" font-weight="400" fill="#91ddb0" font-family="Arial,Helvetica,sans-serif">Workflow loaded. Open Workflow steps below to choose models.</text>
 <text x="64" y="334" font-size="18" font-weight="700" fill="#98c0ff" font-family="Arial,Helvetica,sans-serif">▾</text>

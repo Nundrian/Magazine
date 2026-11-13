@@ -50,3 +50,15 @@ Steps 2 and 3 made real `run_command` calls, the declared handover was verified 
 The previous-work deletion UI was checked in Chromium for placement, selection and cancellation with no delete request. **No live deletion was performed.** Firefox controls and the Open WebUI container logs were not verified.
 
 For detailed run identity, abbreviated source/export hashes and source/release boundaries, read [the exec.5 installed-version record](SIMPLE_0.2.0_EXEC5.md). Its public runner source was not available for a fresh automated regression run in this documentation update. Historical persistent-fault regression scenarios should be retained as test *cases* and specifically rerun on any future published Simple build.
+
+
+### Source publication and documentation audit (13 November 2026)
+
+The uploaded exec.5 Python source is byte-identical with the stored local Function identity (111,367 bytes; SHA-256 `400f8bf4739bac012ce5c0036eb0ecbcf098695e2a9726a00eef84df934d1309`). That source has been added to the repository under `integrations/open_webui/function/magazine_simple_exec5.py` for inspection and further testing. Source identity does **not** mean a public clean installation, a complete security audit, or a rerun of the 989 older tests.
+
+The README's visual and technical claims were reviewed against this source, including completion rules, owner-scoped runs versus shared library permissions, explicit SHA-256 file handover, in-memory queue and manual restart conditions. The four diagrams are UI reconstructions based on the supplied screenshots; they are **not evidence of browser interaction testing**.
+
+
+### Additional local source checks (documentation correction)
+
+The exact uploaded exec.5 source compiled as Python. Its embedded `PAGE_HTML` SHA-256 matched the reported page hash `b1b41a55bb2e5ad3f32582bfc9986357fc16a31850d0b448b709a5a252cc2f97`. A small independent local smoke harness passed **9/9 checks** for own-line and inline DONE parsing, quoted status not being treated as final, HALT, missing-file failure, required-DONE failure, optional-DONE success, path traversal rejection and declared YAML file-handover parsing. These do not replace live model/browser testing or the older beta.5 acceptance suites.

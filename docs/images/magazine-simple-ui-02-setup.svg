@@ -1,0 +1,118 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="1100" viewBox="0 0 1500 1100" role="img" aria-labelledby="t d"><title id="t">Set up</title><desc id="d">Per-step models, Terminal and tools. Faithful diagram of the latest locally installed interface from user-provided screen references; not an original screenshot.</desc><defs><marker id="arr" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8" fill="#63a9ff"/></marker></defs><rect width="1500" height="1100" fill="#0c1322"/><rect x="22" y="19" width="1005" height="1060" rx="17" fill="#111827" stroke="#62718b" stroke-width="1.5"/><text x="43" y="51" font-size="24" font-weight="700" font-family="Arial,sans-serif" fill="#fff">Magazine</text><text x="1074" y="59" font-size="25" font-family="Arial,sans-serif" font-weight="700" fill="#c7ddff">Set up</text><text x="1074" y="87" font-size="15" font-family="Arial,sans-serif" fill="#a7bbd6">Annotations follow the visible controls</text>
+<rect x="42" y="83" width="958" height="968" rx="12" fill="#182234" stroke="#71819b" stroke-width="1.3"/>
+<text x="62" y="119" font-size="21" font-weight="700" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">Set up</text>
+<text x="65" y="155" font-size="14" font-weight="400" fill="#c0ccde" font-family="Arial,Helvetica,sans-serif">3 steps run in order, each in a fresh chat.</text>
+<text x="786" y="136" font-size="12" font-weight="400" fill="#c0ccde" font-family="Arial,Helvetica,sans-serif">Acceptance line (3-step, conflict-free)</text>
+<text x="65" y="186" font-size="18" font-weight="700" fill="#98c0ff" font-family="Arial,Helvetica,sans-serif">▾</text>
+<text x="85" y="186" font-size="19" font-weight="500" fill="#98c0ff" font-family="Arial,Helvetica,sans-serif">Workflow steps — 3</text>
+<rect x="290" y="167" width="84" height="28" rx="15" fill="#1b3841" stroke="#438d79" stroke-width="1.3"/>
+<text x="310" y="187" font-size="13" font-weight="400" fill="#91ddb0" font-family="Arial,Helvetica,sans-serif">in order</text>
+<text x="65" y="228" font-size="19" font-weight="400" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">AI model selection</text>
+<rect x="65" y="239" width="372" height="46" rx="7" fill="#172235" stroke="#778399" stroke-width="1.3"/>
+<text x="76" y="268" font-size="16" font-weight="400" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">Choose a model for each step</text>
+<text x="409" y="267" font-size="22" font-weight="650" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">⌄</text>
+<rect x="65" y="294" width="918" height="153" rx="9" fill="#202d42" stroke="#778399" stroke-width="1.3"/>
+<rect x="79" y="308" width="99" height="37" rx="8" fill="#111827" stroke="#778399" stroke-width="1.3"/>
+<text x="92" y="332.5" font-size="16" font-weight="550" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">Select all</text>
+<rect x="190" y="308" width="130" height="37" rx="8" fill="#111827" stroke="#778399" stroke-width="1.3"/>
+<text x="203" y="332.5" font-size="16" font-weight="550" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">Clear selection</text>
+<text x="332" y="333" font-size="15" font-weight="400" fill="#c0ccde" font-family="Arial,Helvetica,sans-serif">0 of 3 selected</text>
+<text x="79" y="373" font-size="17" font-weight="400" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">AI model for the selected steps</text>
+<rect x="79" y="384" width="723" height="47" rx="7" fill="#172235" stroke="#778399" stroke-width="1.3"/>
+<text x="90" y="413.5" font-size="16" font-weight="400" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">Choose an AI model…</text>
+<text x="774" y="412.5" font-size="22" font-weight="650" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">⌄</text>
+<rect x="811" y="384" width="155" height="47" rx="8" fill="#111827" stroke="#778399" stroke-width="1.3"/>
+<text x="824" y="413.5" font-size="16" font-weight="550" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">Apply to selected</text>
+<rect x="65" y="458" width="918" height="122" rx="8" fill="#202d42" stroke="#778399" stroke-width="1.3"/>
+<rect x="77" y="481" width="16" height="16" rx="4" fill="#26344b" stroke="#a8b3c7" stroke-width="1.3"/>
+<text x="103" y="495" font-size="15" font-weight="400" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">1</text>
+<text x="145" y="490" font-size="17" font-weight="700" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">c01_value</text>
+<text x="277" y="479" font-size="13" font-weight="400" fill="#c0ccde" font-family="Arial,Helvetica,sans-serif">AI model for Step 1</text>
+<rect x="277" y="490" width="241" height="40" rx="7" fill="#172235" stroke="#778399" stroke-width="1.3"/>
+<text x="288" y="516" font-size="16" font-weight="400" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">Choose an AI model…</text>
+<text x="490" y="515" font-size="22" font-weight="650" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">⌄</text>
+<text x="538" y="487" font-size="15" font-weight="400" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">ROLE: You are a careful assistant.</text>
+<text x="538" y="522" font-size="14" font-weight="400" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">TASK: Choose a short friendly greeting of three to six words.</text>
+<rect x="65" y="590" width="918" height="122" rx="8" fill="#202d42" stroke="#778399" stroke-width="1.3"/>
+<rect x="77" y="613" width="16" height="16" rx="4" fill="#26344b" stroke="#a8b3c7" stroke-width="1.3"/>
+<text x="103" y="627" font-size="15" font-weight="400" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">2</text>
+<text x="145" y="622" font-size="17" font-weight="700" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">c02_file</text>
+<text x="277" y="611" font-size="13" font-weight="400" fill="#c0ccde" font-family="Arial,Helvetica,sans-serif">AI model for Step 2</text>
+<rect x="277" y="622" width="241" height="40" rx="7" fill="#172235" stroke="#778399" stroke-width="1.3"/>
+<text x="288" y="648" font-size="16" font-weight="400" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">Choose an AI model…</text>
+<text x="490" y="647" font-size="22" font-weight="650" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">⌄</text>
+<text x="538" y="619" font-size="15" font-weight="400" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">ROLE: You are a careful assistant with a Terminal.</text>
+<text x="538" y="654" font-size="14" font-weight="400" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">TASK: Save the greeting from the earlier step into a text file.</text>
+<rect x="65" y="722" width="918" height="122" rx="8" fill="#202d42" stroke="#778399" stroke-width="1.3"/>
+<rect x="77" y="745" width="16" height="16" rx="4" fill="#26344b" stroke="#a8b3c7" stroke-width="1.3"/>
+<text x="103" y="759" font-size="15" font-weight="400" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">3</text>
+<text x="145" y="754" font-size="17" font-weight="700" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">c03_verify</text>
+<text x="277" y="743" font-size="13" font-weight="400" fill="#c0ccde" font-family="Arial,Helvetica,sans-serif">AI model for Step 3</text>
+<rect x="277" y="754" width="241" height="40" rx="7" fill="#172235" stroke="#778399" stroke-width="1.3"/>
+<text x="288" y="780" font-size="16" font-weight="400" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">Choose an AI model…</text>
+<text x="490" y="779" font-size="22" font-weight="650" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">⌄</text>
+<text x="538" y="751" font-size="15" font-weight="400" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">ROLE: You are a careful assistant with a Terminal.</text>
+<text x="538" y="786" font-size="14" font-weight="400" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">TASK: Check the handed-over file contains the expected greeting.</text>
+<text x="65" y="861" font-size="18" font-weight="700" fill="#98c0ff" font-family="Arial,Helvetica,sans-serif">▸</text>
+<text x="85" y="861" font-size="19" font-weight="500" fill="#98c0ff" font-family="Arial,Helvetica,sans-serif">Model information</text>
+<text x="65" y="898" font-size="19" font-weight="700" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">Terminal for cartridge workers</text>
+<text x="65" y="928" font-size="15" font-weight="400" fill="#c0ccde" font-family="Arial,Helvetica,sans-serif">Native Open Terminal connection</text>
+<rect x="329" y="908" width="199" height="40" rx="7" fill="#172235" stroke="#778399" stroke-width="1.3"/>
+<text x="340" y="934" font-size="16" font-weight="400" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">Open Terminal</text>
+<text x="500" y="933" font-size="22" font-weight="650" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">⌄</text>
+<text x="65" y="982" font-size="19" font-weight="700" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">Tools for this workflow</text>
+<rect x="878" y="958" width="102" height="26" rx="17" fill="#202d42" stroke="#778399" stroke-width="1.3"/>
+<text x="891" y="977" font-size="13" font-weight="400" fill="#91ddb0" font-family="Arial,Helvetica,sans-serif">4 found</text>
+<rect x="66" y="1005" width="16" height="16" rx="4" fill="#26344b" stroke="#a8b3c7" stroke-width="1.3"/>
+<text x="92" y="1019" font-size="15" font-weight="400" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">Browser</text>
+<rect x="259" y="1005" width="16" height="16" rx="4" fill="#26344b" stroke="#a8b3c7" stroke-width="1.3"/>
+<text x="285" y="1019" font-size="15" font-weight="400" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">Magazine Auto Approval</text>
+<rect x="537" y="1005" width="16" height="16" rx="4" fill="#26344b" stroke="#a8b3c7" stroke-width="1.3"/>
+<text x="563" y="1019" font-size="15" font-weight="400" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">Fresh worker</text>
+<rect x="760" y="1005" width="16" height="16" rx="4" fill="#26344b" stroke="#a8b3c7" stroke-width="1.3"/>
+<text x="786" y="1019" font-size="15" font-weight="400" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">Development Toolkit</text>
+<rect x="1073" y="120" width="396" height="102" rx="12" fill="#f1f7ff" stroke="#d2e0f1" stroke-width="1.3"/>
+<circle cx="1096" cy="145" r="17" fill="#276bcb"/>
+<text x="1091" y="151" font-size="17" font-weight="700" fill="#fff" font-family="Arial,Helvetica,sans-serif">1</text>
+<text x="1124" y="150" font-size="18" font-weight="700" fill="#1c3a60" font-family="Arial,Helvetica,sans-serif">Workflow steps ▾</text>
+<text x="1096" y="178" font-size="15" font-weight="400" fill="#4d6581" font-family="Arial,Helvetica,sans-serif">Expand all ordered cartridges</text>
+<text x="1096" y="198" font-size="15" font-weight="400" fill="#4d6581" font-family="Arial,Helvetica,sans-serif">and their prompts.</text>
+<path d="M1072 158 L1044 158 L1044 207 L1008 207" fill="none" stroke="#63a9ff" stroke-width="3" marker-end="url(#arr)"/>
+<rect x="1073" y="236" width="396" height="102" rx="12" fill="#f1f7ff" stroke="#d2e0f1" stroke-width="1.3"/>
+<circle cx="1096" cy="261" r="17" fill="#276bcb"/>
+<text x="1091" y="267" font-size="17" font-weight="700" fill="#fff" font-family="Arial,Helvetica,sans-serif">2</text>
+<text x="1124" y="266" font-size="18" font-weight="700" fill="#1c3a60" font-family="Arial,Helvetica,sans-serif">Model selection ▾</text>
+<text x="1096" y="294" font-size="15" font-weight="400" fill="#4d6581" font-family="Arial,Helvetica,sans-serif">Use one model for all steps,</text>
+<text x="1096" y="314" font-size="15" font-weight="400" fill="#4d6581" font-family="Arial,Helvetica,sans-serif">or assign each step separately.</text>
+<path d="M1072 274 L1044 274 L1044 261 L1008 261" fill="none" stroke="#63a9ff" stroke-width="3" marker-end="url(#arr)"/>
+<rect x="1073" y="350" width="396" height="102" rx="12" fill="#f1f7ff" stroke="#d2e0f1" stroke-width="1.3"/>
+<circle cx="1096" cy="375" r="17" fill="#276bcb"/>
+<text x="1091" y="381" font-size="17" font-weight="700" fill="#fff" font-family="Arial,Helvetica,sans-serif">3</text>
+<text x="1124" y="380" font-size="18" font-weight="700" fill="#1c3a60" font-family="Arial,Helvetica,sans-serif">Bulk assignment</text>
+<text x="1096" y="408" font-size="15" font-weight="400" fill="#4d6581" font-family="Arial,Helvetica,sans-serif">Tick selected rows and apply</text>
+<text x="1096" y="428" font-size="15" font-weight="400" fill="#4d6581" font-family="Arial,Helvetica,sans-serif">a model to all ticked steps.</text>
+<path d="M1072 388 L1044 388 L1044 407 L1008 407" fill="none" stroke="#63a9ff" stroke-width="3" marker-end="url(#arr)"/>
+<rect x="1073" y="472" width="396" height="102" rx="12" fill="#f1f7ff" stroke="#d2e0f1" stroke-width="1.3"/>
+<circle cx="1096" cy="497" r="17" fill="#276bcb"/>
+<text x="1091" y="503" font-size="17" font-weight="700" fill="#fff" font-family="Arial,Helvetica,sans-serif">4</text>
+<text x="1124" y="502" font-size="18" font-weight="700" fill="#1c3a60" font-family="Arial,Helvetica,sans-serif">Individual dropdowns ▾</text>
+<text x="1096" y="530" font-size="15" font-weight="400" fill="#4d6581" font-family="Arial,Helvetica,sans-serif">Every cartridge can override</text>
+<text x="1096" y="550" font-size="15" font-weight="400" fill="#4d6581" font-family="Arial,Helvetica,sans-serif">the bulk choice.</text>
+<path d="M1072 510 L1044 510 L1044 641 L1008 641" fill="none" stroke="#63a9ff" stroke-width="3" marker-end="url(#arr)"/>
+<rect x="1073" y="595" width="396" height="102" rx="12" fill="#f1f7ff" stroke="#d2e0f1" stroke-width="1.3"/>
+<circle cx="1096" cy="620" r="17" fill="#276bcb"/>
+<text x="1091" y="626" font-size="17" font-weight="700" fill="#fff" font-family="Arial,Helvetica,sans-serif">5</text>
+<text x="1124" y="625" font-size="18" font-weight="700" fill="#1c3a60" font-family="Arial,Helvetica,sans-serif">Model information ▸</text>
+<text x="1096" y="653" font-size="15" font-weight="400" fill="#4d6581" font-family="Arial,Helvetica,sans-serif">Expandable reference list only;</text>
+<text x="1096" y="673" font-size="15" font-weight="400" fill="#4d6581" font-family="Arial,Helvetica,sans-serif">it does not assign a model.</text>
+<path d="M1072 633 L1044 633 L1044 860 L1008 860" fill="none" stroke="#63a9ff" stroke-width="3" marker-end="url(#arr)"/>
+<rect x="1073" y="713" width="396" height="102" rx="12" fill="#f1f7ff" stroke="#d2e0f1" stroke-width="1.3"/>
+<circle cx="1096" cy="738" r="17" fill="#276bcb"/>
+<text x="1091" y="744" font-size="17" font-weight="700" fill="#fff" font-family="Arial,Helvetica,sans-serif">6</text>
+<text x="1124" y="743" font-size="18" font-weight="700" fill="#1c3a60" font-family="Arial,Helvetica,sans-serif">Terminal ▾ and tools</text>
+<text x="1096" y="771" font-size="15" font-weight="400" fill="#4d6581" font-family="Arial,Helvetica,sans-serif">One Terminal for this run;</text>
+<text x="1096" y="791" font-size="15" font-weight="400" fill="#4d6581" font-family="Arial,Helvetica,sans-serif">tools begin unselected.</text>
+<path d="M1072 751 L1044 751 L1044 924 L1008 924" fill="none" stroke="#63a9ff" stroke-width="3" marker-end="url(#arr)"/>
+<text x="40" y="1076" font-size="14" font-weight="400" fill="#8da6c9" font-family="Arial,Helvetica,sans-serif">Appearance, line spacing and control names follow the supplied installed-interface references</text>
+<text x="1320" y="1076" font-size="13" font-weight="700" fill="#92beef" font-family="Arial,Helvetica,sans-serif">EXEC.5 · OPEN WEBUI</text>
+</svg>

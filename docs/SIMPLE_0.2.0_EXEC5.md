@@ -1,109 +1,192 @@
-# Magazine Simple 0.2.0-exec.5 — installed-version record
+# Magazine Simple 0.2.0-exec.5 — engineering reference
 
-**Date:** 13 November 2026  
-**Scope:** locally installed Open WebUI edition and acceptance evidence supplied by the maintainer.  
-**Public download status:** **not packaged or published as an exec.5 runner release here**. The source code and downloadable Function already in this repository are from the older **0.1.0-beta.5** edition.
+**Version:** `0.2.0-exec.5` · **Open WebUI host:** `0.12.5` (declared and locally tested) · **Recorded installation date:** 13 November 2026.
 
-[Plain-English README](../README.md) · [Illustrated interface](guide/index.html) · [Sidebar Launcher 0.1.0](SIDEBAR_LAUNCHER.md)
+**Canonical source:** [`magazine_simple_exec5.py`](../integrations/open_webui/function/magazine_simple_exec5.py), **111,367 UTF-8 bytes**, SHA-256:
 
-## What this edition does
+```text
+400f8bf4739bac012ce5c0036eb0ecbcf098695e2a9726a00eef84df934d1309
+```
 
-Magazine Simple is the current, streamlined Open WebUI implementation. A user imports a workflow ZIP, loads its ordered cartridges, chooses one model for the whole run or selects models step by step, optionally selects a Native Open Terminal connection and Open WebUI tools, then **prepares** a run. Preparation saves the selections but does not start work. The user presses **Start workflow** separately.
+The uploaded source was byte-matched to the local installation record before publication. Its embedded `PAGE_HTML` also hashes to SHA-256 `b1b41a55bb2e5ad3f32582bfc9986357fc16a31850d0b448b709a5a252cc2f97`, matching the reported served-page hash. The Git blob represents those **exact bytes** (blob SHA-1 `5c0a31353fa7bb1bc4cb7ff2efc54862ae58f6d2`). This establishes **source identity**, not independent clean-install or security certification.
 
-Each cartridge runs in a **fresh conversation**. Its response and declared output files can be preserved and made available to dependent cartridges. A ledger and previous-run records support inspection and export. These steps are prewritten; Magazine is not an automatic task planner, model improver or task-success judge.
+[Main README](../README.md) · [Actual-interface visual guide](guide/index.html) · [Launcher notes](SIDEBAR_LAUNCHER.md) · [Historical testing](TESTING.md)
 
-### Execution sequence
+## Purpose and design boundaries
+
+Magazine Simple is a **pre-authored, sequential LLM workflow executor**, not a planner or review agent. Each cartridge is a saved, ordinary Open WebUI chat with a selected model and the run's optional Terminal and tool IDs. A cartridge receives its own prompt, any explicitly declared file inputs and any requested JSON values from prior replies. Chats are **kept** in Open WebUI.
+
+The engine does **not** automatically:
+- create or rearrange cartridges;
+- choose models;
+- review or fix model outputs;
+- retry a failed cartridge;
+- compress model context; or
+- impose an inference time limit.
+
+A human/operator can use **Continue from this step** to rerun from a selected cartridge. This is a new attempt with a **fresh chat**, not continuation of the previous conversation. All previous attempts remain in saved evidence.
+
+## Implementation overview
+
+| Element | Source implementation |
+| --- | --- |
+| Open WebUI Function | `Event` with `Valves` and `install_routes()` |
+| HTTP/API client | `OpenWebUI` class uses authenticated `httpx.AsyncClient` requests to Open WebUI's native chat APIs |
+| Saved-chat execution | `run_chat()`: creates `/api/v1/chats/new`, starts `/api/chat/completions`, polls `/api/tasks/chat/{id}`, reads the saved assistant reply |
+| Sequential scheduling | `Engine` processes cartridges in order, one active run per Open WebUI process, with an in-memory first-come queue |
+| Persistent run state | `Store` writes `run.json` and `LEDGER.md` into owner-scoped run directories |
+| File handover | `prepare_files()` copies declared input bytes while hashing them and checks earlier recorded output bytes/SHA-256 |
+| Output completion | `collect_outputs()`, `closing_object()`, `judge()` verify files and the final response's closing status |
+| Export | `build_download()` packages the ledger, `run.json`, workflow copy, results and work files |
+
+### High-level sequence
 
 ```mermaid
 flowchart TD
-  A["Workflow ZIP with magazine.yaml and step prompts"] --> B["Import, validate and load"]
-  B --> C{"Model selection"}
-  C -->|One model| D["Assign shared model"]
-  C -->|Per step| E["Assign models individually or in bulk"]
-  D --> F["Choose optional Terminal and tools"]
-  E --> F
-  F --> G["Prepare: READY"]
-  G -->|Explicit Start| H["Step 1: fresh chat"]
-  H --> I["Save response and declared outputs"]
-  I --> J["Handover to Step 2: fresh chat"]
-  J --> K["Execute tools / Terminal where authorised"]
-  K --> L["Save output and hand over to following steps"]
-  L --> M["Verification step / further cartridges"]
-  M --> N["Ledger, previous work and results ZIP"]
-  H -.->|Failure or Stop request| X["Stopped / needs attention; preserve completed evidence"]
-  J -.->|Failure or Stop request| X
-  M -.->|Failure or Stop request| X
+    ZIP["Import ZIP → validate magazine.yaml"] --> SET["Load workflow and select models"]
+    SET --> OPTIONS["Choose optional Terminal and tools"]
+    OPTIONS --> READY["Prepare → READY"]
+    READY -->|Operator starts| QUEUE{"Runner busy?"}
+    QUEUE -->|Yes| WAIT["FIFO queue in process memory"]
+    WAIT --> CHAT
+    QUEUE -->|No| CHAT["Fresh Open WebUI chat for cartridge N"]
+    CHAT --> RESP["Read saved final assistant message"]
+    RESP --> VERIFY{"DONE/HALT and declared outputs?"}
+    VERIFY -->|DONE and files present| SAVE["Save reply, output hashes and ledger"]
+    SAVE -->|Next step| COPY["Copy declared input; verify SHA-256"]
+    COPY --> CHAT
+    SAVE -->|Last step| FIN["Completed → inspect results / ZIP"]
+    VERIFY -->|HALT / missing DONE / missing file / error| STOP["Stop and retain evidence"]
+    STOP -->|Operator selects Continue from this step| CHAT
 ```
 
-Arrows represent execution order and *declared* handovers; they do not imply that every workflow must use Terminal, have three cartridges, or automatically verify its own correctness.
+**The diagram is a logical flow, not an assertion that queued runs or manual restarts survive process restart automatically.** The queue itself is not durable.
 
-### Present interface
+## Workflow package format
 
-The new page is served from **`/magazine-simple`**, not the older beta.5 `/magazine` address.
+A ZIP needs `magazine.yaml` or `magazine.yml` at its root, or under one enclosing top-level folder, with nonempty cartridges. Example:
 
-| Section | Controls and behaviour |
+```yaml
+schema_version: "1.0"
+name: "Example handover"
+cartridges:
+  - id: c01_create
+    model: writer
+    prompt_file: cartridges/01-create.md
+    artifacts:
+      outputs:
+        - data/output.txt
+
+  - id: c02_check
+    model: reviewer
+    prompt_file: cartridges/02-check.md
+    artifacts:
+      inputs:
+        - from: c01_create
+          path: data/output.txt
+```
+
+`model` (or legacy `job_type`) is a *logical key* used in the YAML; the user maps the key or step ID to a specific Open WebUI model before preparing. Model selection supports a shared model and per-step/bulk assignment. There is no fixed cartridge count in the execution architecture, although ZIP-member and resource limits apply.
+
+Declared `handover` entries can also select values from a prior JSON response with JSON Pointer syntax, for example:
+
+```yaml
+handover:
+  - from: c01_create
+    select: /greeting
+    as: expected_greeting
+```
+
+Only earlier cartridges can be referenced. Declared input files must match an earlier declared output. Older unused fields such as `artifacts.review` and `constraints` are ignored by this Simple runner; do not represent them as active review features.
+
+### Input and output handling
+
+- ZIP import checks relative paths, invalid references and link entries, and stages imports before publishing them to the shared library. It rejects a colliding **workflow-library name**, but the code does not explicitly reject duplicate archive-member names; do not rely on it to detect that condition.
+- The importer limits an incoming ZIP to **16 MiB**, **2,000 file members** and **64 MiB total declared uncompressed content**.
+- Per-cartridge output files are collected by declared path, type checked and hashed. Missing required files fail the step.
+- Input handover compares source size and SHA-256 with the completed earlier step's recorded output. If changed, the handover is rejected.
+- The work folder is a shared path visible to both Magazine and the selected Terminal. The default is `/workspace/magazine-simple`. A correct Docker bind or shared volume is an environment requirement, not something the Function provisions.
+- The ZIP download imposes an approximately **256 MiB** collected-file limit. When exceeded, it inserts `TRUNCATED.txt`; therefore an export may omit remaining files.
+
+## Completion, failure and restart
+
+**Default valve `require_done_line=True`.** A cartridge is marked done only after its saved final assistant message concludes with `{"status":"DONE"}` and required declared output files are present. The parser also accepts a final inline `DONE` object following a completed sentence; this branch was exercised in the reported live exec.5 acceptance.
+
+The engine recognises a top-level `{"status":"HALT","reason":"..."}` and stops the workflow. Missing DONE, missing files, saved-chat failures and unexpected errors also stop execution, retaining the attempts and files for inspection.
+
+The source implements **Continue from this step** via `POST /api/magazine-simple/runs/{run_id}/restart`. Restart is permitted only when **all earlier cartridges** have status `done`. Existing attempt outputs/prompts are moved aside using attempt suffixes rather than overwritten silently. There is no automatic repair or repeat.
+
+### Queue and process restart
+
+- The `Engine` runs **one active workflow at a time per Python process**; others wait FIFO.
+- The queue and its authentication tokens live **in memory**, so a process restart discards queued entries; stale queued runs are moved back to their previous state when inspected.
+- An active interrupted workflow is marked `interrupted` when detected on a subsequent run-list request. A human must choose how to restart.
+- This is **not** a guaranteed global multi-worker lock. No claim is made for multiple backend replicas or Redis-based scheduling.
+
+## Storage and ownership
+
+Default data root: `DATA_DIR/magazine-simple`.
+
+| Stored material | Default organisation |
 | --- | --- |
-| **Your workflows** | Select/load a workflow; refresh; expand **Delete workflows** to delete imported definitions (existing run history retained); expand **Add a workflow** to import a ZIP and optional short name |
-| **Set up → Workflow steps** | Expand/collapse cartridges; choose the same model for all steps, or choose per-step models with checkbox bulk assignment and individual overrides |
-| **Model information** | Expand/collapse a reference list of available models; the list does not assign them |
-| **Terminal for cartridge workers** | Select an available Native Open Terminal connection or none; one choice for the run |
-| **Tools for this workflow** | Tick the tool permissions requested for the run; no tools are selected by default; host permissions still apply |
-| **Prepare workflow** | Create a READY run without beginning execution |
-| **Run workflow** | Display run ID, work folder, models, progress, Start/Stop/Check progress and expandable **Ledger** |
-| **Results and previous work** | Select a historical run, view results or export a ZIP; expandable **Delete previous work** has its own selection and confirmation actions |
+| Shared workflow library | `DATA_DIR/magazine-simple/library/{workflow_id}/` |
+| Run state and captured workflow copy | `DATA_DIR/magazine-simple/runs/{owner_id}/{run_id}/` |
+| Canonical ledger | `runs/{owner_id}/{run_id}/LEDGER.md` (also copied to workspace when possible) |
+| Saved reply and prompt files | `runs/{owner_id}/{run_id}/results/` |
+| Terminal work and declared outputs | `/workspace/magazine-simple/{run_id}/{cartridge_id}/` |
 
-**Deletion distinction:** Removing a workflow definition keeps earlier work; removing previous work is intended to erase that run's ledger, saved replies, results and files. Open WebUI chats remain. Running or queued work cannot be deleted. The deletion interface was tested, **not** its live delete operation.
+**Important permission distinction:** The workflow library is shared, and the source allows **any authenticated user to add or remove workflow definitions**. Runs, run histories and downloads are owner-scoped through `get_current_user`. Deleting a library workflow does not delete its existing runs; deleting previous work removes that owner's saved run records and work files but **does not delete Open WebUI chats**. The previous-work delete UI was verified in Chromium without actually executing live deletion.
 
-[Open the complete annotated HTML walkthrough](guide/index.html). It is documentation, not a separately installed app.
+## HTTP endpoints
 
-## Installation evidence supplied by the maintainer
+The Function serves the page at `GET /magazine-simple` and uses the `/api/magazine-simple` prefix.
 
-The following records refer to the existing **local exec.5 installation**, not a new test of the files in this public repository.
-
-| Item | Evidence |
+| Method and route | Purpose |
 | --- | --- |
-| Update | 13 Nov 2026, 09:33:51 UTC, in place via `POST /api/v1/functions/id/magazine_simple/update` |
-| Function identity | Existing ID retained, enabled, not global; valves `{}`; unrelated Functions untouched |
-| Installed code | 111,367 bytes; SHA-256 abbreviated **`400f8bf4…1309`** |
-| Served page | `/magazine-simple`, `page.html` abbreviated SHA-256 **`b1b41a55…2f97`** |
-| Before/after preservation | Existing run folders: **178 files**, all hashes identical |
-| Local backup | `C:\Codex\Magazine\Magazine-Simple-installed-backup-0.2.0-exec.3-pre-exec.5-20261113\\`, including stored code, Function record and `ROLLBACK.txt` |
-| Live acceptance | Run `20261113-093654-9352d6`; three steps completed |
-| Model / connected resources | `qwen3-coder-udq4-native:latest`; Open Terminal; no additional tools |
-| Real tool calls | Steps 2 and 3 executed Terminal `run_command` |
-| Handover check | File hash prefix **`fc70a5e3…`**; `result.json` reports `match: true` |
-| Completion branch | Inline `DONE` following sentence in step 2 exercised live |
-| Export | `Magazine-20261113-093654-9352d6.zip`; SHA-256 abbreviated **`0670ae9e…a21d`** |
+| `GET /workflows`, `GET /workflows/{id}` | List and inspect shared definitions |
+| `POST /workflows/import` | Import a base64-encoded ZIP |
+| `POST /workflows/delete`, `DELETE /workflows/{id}` | Delete shared definitions |
+| `GET /options` | List models, tools and Terminal connections |
+| `GET /runs`, `GET /queue` | Owner's runs and sanitised queue status |
+| `POST /runs` | Prepare a run (optionally start via explicit `start` field) |
+| `POST /runs/delete` | Delete owner's non-running, non-queued previous work |
+| `POST /runs/{id}/start`, `GET /runs/{id}` | Start and inspect |
+| `POST /runs/{id}/stop` | Request Stop or remove from waiting queue |
+| `POST /runs/{id}/restart` | Continue from selected cartridge |
+| `GET /runs/{id}/download` | ZIP export |
 
-The abbreviated hashes are **not complete independent file verification references**. Full values and source must be obtained from the saved local acceptance artefacts; do not reconstruct them from the displayed prefixes/suffixes.
+API handlers use `Depends(get_current_user)`; the page itself is a static HTML route. Function registration removes/reinserts the Simple routes on appropriate Function lifecycle events. **Do not conflate this with the legacy `/api/magazine` endpoints.**
 
-### Verified and not verified
+### Valves
 
-**Verified in the supplied installation record:** installed source parity with candidate, unchanged existing run files, real three-cartridge execution with Terminal, declared file handover, matching verification result, inline DONE handling, prepared/run views, and the Chromium previous-work deletion UI placement/selection state.
+| Valve | Default | Meaning |
+| --- | --- | --- |
+| `library_root` | Empty | Resolve to `DATA_DIR/magazine-simple/library` |
+| `workspace_root` | `/workspace/magazine-simple` | Shared working files |
+| `open_webui_base_url` | Empty | Infer `http://127.0.0.1:{PORT or 8080}` |
+| `require_done_line` | `True` | Require final DONE/HALT status; disabling falls back to the earlier completion rule based on required files |
 
-**Not verified:** actual deletion of saved work (explicitly not performed), Firefox UI interactions (the page loaded but direct interaction was unavailable), or Open WebUI container logs.
+The source declares `httpx==0.28.1` and `PyYAML==6.0.3` as requirements. It relies on Open WebUI's FastAPI/Pydantic environment.
 
-The existence of an export and a completed status does not itself prove the model's answer is correct outside the acceptance-line checks.
+## Deployment and launcher
 
-## Sidebar Launcher 0.1.0
+The **Sidebar Launcher 0.1.0** is [separate source](../integrations/open_webui/function/magazine_simple_sidebar_launcher.py). It adds a browser link to `/magazine-simple` by modifying Open WebUI's `STATIC_DIR/loader.js` and retains backups; it does not schedule a run or change the engine. Keep the historical patched-Docker integration separate.
 
-The separately installed **Magazine Simple Sidebar Launcher 0.1.0** specifies **Open WebUI 0.12.5** and adds a Magazine link to `/magazine-simple` in the sidebar, opening it in a new tab. It is a navigation integration, **not** a second runner. The supplied source is now kept at:
+**Source publication is not an independently accepted installer.** The reported installation was an in-place update of an existing Function via Open WebUI's API. A clean install from the published source, host-security review, upgrades on other Open WebUI versions and lifecycle rollback are outside the supplied exec.5 acceptance.
 
-[`integrations/open_webui/function/magazine_simple_sidebar_launcher.py`](../integrations/open_webui/function/magazine_simple_sidebar_launcher.py)
+## Test evidence and boundaries
 
-See [launcher technical notes](SIDEBAR_LAUNCHER.md) for loader behaviour, backups and risk boundaries. The older Docker-patched sidebar recipe remains for historical beta.5 users; **do not combine it with the launcher as if both were required**.
+The maintainer's 13 November 2026 installation report identifies:
+- In-place update at **09:33:51 UTC**, same Function ID, enabled/not global, valves shown as `{}` in the saved record; no other Functions modified.
+- Page SHA-256 prefix/suffix `b1b41a55…2f97` and exact installed Function source hash above.
+- **178 existing run files** hash-identical before and after the update.
+- Live run `20261113-093654-9352d6` completed with **three cartridges** on `qwen3-coder-udq4-native:latest`, Open Terminal and no additional tools.
+- Steps 2 and 3 executed real `run_command` calls; the declared file handover was checked (hash prefix `fc70a5e3…`) and `result.json` reported `match: true`.
+- Step 2's final answer exercised the inline DONE branch.
+- Exported ZIP SHA-256 prefix/suffix `0670ae9e…a21d`.
 
-## Evidence lineage: don't mix builds
+**Not tested:** live deletion, Firefox UI interactions beyond loading the page, or Open WebUI container logs. The Chromium deletion UI was inspected, and cancellation sent no deletion request; the confirmation box was replaced for that test.
 
-The older published **Magazine beta.5** has **989 recorded passing regressions**: 611 core, 244 Function and 134 UI/sidebar. The beta.5 acceptance record includes an isolated stock Open WebUI 0.11.3 check, deterministic injected-response tests and source/archive parity. Its predecessor beta.4 has the separately retained live Bonsai tests. These results remain valid **for those versions**, not as freshly rerun Simple exec.5 tests.
+**Historical test lineage:** The older public beta.5 implementation passed **989 automated regressions** (611 core, 244 Function, 134 interface/sidebar). Beta.4 live Bonsai checks were earlier again. These remain valuable historical evidence but **do not establish 989 passing tests on exec.5**.
 
-The exec.5 installation evidence above is useful, particularly because it specifically covers the prior persistent completion/handover fault area with an inline DONE branch, real tool calls and verified handover. It is still **one live three-step scenario**, not proof that the older 989 tests pass on the simplified codebase.
-
-[Historical testing](TESTING.md) · [Historical beta.5 acceptance](ACCEPTANCE.md) · [Public beta.5 installation](FUNCTION_INSTALL.md)
-
-## Publication and installation limits
-
-- This update publishes **documentation and the supplied Sidebar Launcher source only**, not the newer runner's 111,367-byte Function source or a corresponding `0.2.0-exec.5` install package.
-- Do not use the old beta.5 installer to claim an exec.5 installation. The beta.5 Function route is `/magazine` on its accepted Open WebUI 0.11.3 baseline.
-- Do not replace an existing local exec.5 Function with the public beta.5 package without an explicit downgrade/rollback decision.
-- Existing data, authentication, tool permissions and persistent volumes belong to the user's Open WebUI instance; the documentation-only HTML does not access them.
+See [the testing chronology](TESTING.md). The source-preserving updated docs have been reviewed for version drift. Python syntax compilation completed locally, and **9 focused source-level smoke checks passed** (DONE/HALT parsing, completion conditions, relative-path rejection and handover YAML parsing). Those checks were **not** live Open WebUI integration or a full regression suite.

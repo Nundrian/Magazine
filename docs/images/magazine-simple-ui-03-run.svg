@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="740" viewBox="0 0 1500 740" role="img" aria-labelledby="t d"><title id="t">Run workflow</title><desc id="d">Prepared run, execution and ledger. Faithful diagram of the latest locally installed interface from user-provided screen references; not an original screenshot.</desc><defs><marker id="arr" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8" fill="#63a9ff"/></marker></defs><rect width="1500" height="740" fill="#0c1322"/><rect x="22" y="19" width="1005" height="700" rx="17" fill="#111827" stroke="#62718b" stroke-width="1.5"/><text x="43" y="51" font-size="24" font-weight="700" font-family="Arial,sans-serif" fill="#fff">Magazine</text><text x="1074" y="59" font-size="25" font-family="Arial,sans-serif" font-weight="700" fill="#c7ddff">Run workflow</text><text x="1074" y="87" font-size="15" font-family="Arial,sans-serif" fill="#a7bbd6">Annotations follow the visible controls</text>
+<rect x="42" y="82" width="958" height="598" rx="12" fill="#182234" stroke="#71819b" stroke-width="1.3"/>
+<text x="62" y="118" font-size="21" font-weight="700" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">Run workflow</text>
+<rect x="65" y="139" width="919" height="510" rx="10" fill="#202d42" stroke="#778399" stroke-width="1.3"/>
+<text x="84" y="174" font-size="21" font-weight="700" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">Acceptance line (3-step, conflict-free)</text>
+<rect x="841" y="145" width="121" height="31" rx="16" fill="#202d42" stroke="#778399" stroke-width="1.3"/>
+<text x="853" y="166" font-size="14" font-weight="400" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">Ready to start</text>
+<text x="84" y="215" font-size="15" font-weight="400" fill="#c0ccde" font-family="Arial,Helvetica,sans-serif">Prepared 13/11/2026 · Reference EXAMPLE-001 · Work folder /workspace/magazine-simple/example</text>
+<text x="84" y="248" font-size="16" font-weight="400" fill="#c0ccde" font-family="Arial,Helvetica,sans-serif">Terminal: open-terminal · Tools: none</text>
+<text x="84" y="292" font-size="22" font-weight="400" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">0 of 3 steps finished.</text>
+<rect x="84" y="311" width="874" height="5" rx="3" fill="#c7cedc" stroke="#c7cedc" stroke-width="1.3"/>
+<text x="108" y="374" font-size="18" font-weight="400" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">1.  c01_value — waiting · qwen3-coder-udq4-native:latest</text>
+<text x="108" y="414" font-size="18" font-weight="400" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">2.  c02_file — waiting · qwen3-coder-udq4-native:latest</text>
+<text x="108" y="454" font-size="18" font-weight="400" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">3.  c03_verify — waiting · qwen3-coder-udq4-native:latest</text>
+<rect x="84" y="484" width="174" height="52" rx="8" fill="#a6c6ff" stroke="#a6c6ff" stroke-width="1.3"/>
+<text x="97" y="516" font-size="16" font-weight="700" fill="#101b2b" font-family="Arial,Helvetica,sans-serif">Start workflow</text>
+<rect x="272" y="484" width="170" height="52" rx="8" fill="#111827" stroke="#778399" stroke-width="1.3"/>
+<text x="285" y="516" font-size="16" font-weight="550" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">Stop workflow</text>
+<rect x="456" y="484" width="161" height="52" rx="8" fill="#111827" stroke="#778399" stroke-width="1.3"/>
+<text x="469" y="516" font-size="16" font-weight="550" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">Check progress</text>
+<text x="84" y="575" font-size="18" font-weight="700" fill="#98c0ff" font-family="Arial,Helvetica,sans-serif">▾</text>
+<text x="104" y="575" font-size="19" font-weight="500" fill="#98c0ff" font-family="Arial,Helvetica,sans-serif">Ledger</text>
+<line x1="84" y1="614" x2="957" y2="614" stroke="#657691" stroke-width="1"/>
+<text x="89" y="608" font-size="13" font-weight="400" fill="#c0ccde" font-family="Arial,Helvetica,sans-serif">#       Step       Attempt       Model                       Status              Files produced</text>
+<rect x="1073" y="116" width="396" height="102" rx="12" fill="#f1f7ff" stroke="#d2e0f1" stroke-width="1.3"/>
+<circle cx="1096" cy="141" r="17" fill="#276bcb"/>
+<text x="1091" y="147" font-size="17" font-weight="700" fill="#fff" font-family="Arial,Helvetica,sans-serif">1</text>
+<text x="1124" y="146" font-size="18" font-weight="700" fill="#1c3a60" font-family="Arial,Helvetica,sans-serif">Prepared ≠ started</text>
+<text x="1096" y="174" font-size="15" font-weight="400" fill="#4d6581" font-family="Arial,Helvetica,sans-serif">READY saves configuration;</text>
+<text x="1096" y="194" font-size="15" font-weight="400" fill="#4d6581" font-family="Arial,Helvetica,sans-serif">no inference has begun.</text>
+<path d="M1072 154 L1044 154 L1044 164 L1008 164" fill="none" stroke="#63a9ff" stroke-width="3" marker-end="url(#arr)"/>
+<rect x="1073" y="233" width="396" height="102" rx="12" fill="#f1f7ff" stroke="#d2e0f1" stroke-width="1.3"/>
+<circle cx="1096" cy="258" r="17" fill="#276bcb"/>
+<text x="1091" y="264" font-size="17" font-weight="700" fill="#fff" font-family="Arial,Helvetica,sans-serif">2</text>
+<text x="1124" y="263" font-size="18" font-weight="700" fill="#1c3a60" font-family="Arial,Helvetica,sans-serif">Progress and steps</text>
+<text x="1096" y="291" font-size="15" font-weight="400" fill="#4d6581" font-family="Arial,Helvetica,sans-serif">Ordered step statuses</text>
+<text x="1096" y="311" font-size="15" font-weight="400" fill="#4d6581" font-family="Arial,Helvetica,sans-serif">and current run details.</text>
+<path d="M1072 271 L1044 271 L1044 324 L1008 324" fill="none" stroke="#63a9ff" stroke-width="3" marker-end="url(#arr)"/>
+<rect x="1073" y="352" width="396" height="102" rx="12" fill="#f1f7ff" stroke="#d2e0f1" stroke-width="1.3"/>
+<circle cx="1096" cy="377" r="17" fill="#276bcb"/>
+<text x="1091" y="383" font-size="17" font-weight="700" fill="#fff" font-family="Arial,Helvetica,sans-serif">3</text>
+<text x="1124" y="382" font-size="18" font-weight="700" fill="#1c3a60" font-family="Arial,Helvetica,sans-serif">Start · Stop · Check</text>
+<text x="1096" y="410" font-size="15" font-weight="400" fill="#4d6581" font-family="Arial,Helvetica,sans-serif">Start explicitly, request Stop,</text>
+<text x="1096" y="430" font-size="15" font-weight="400" fill="#4d6581" font-family="Arial,Helvetica,sans-serif">or refresh the status.</text>
+<path d="M1072 390 L1044 390 L1044 511 L1008 511" fill="none" stroke="#63a9ff" stroke-width="3" marker-end="url(#arr)"/>
+<rect x="1073" y="475" width="396" height="102" rx="12" fill="#f1f7ff" stroke="#d2e0f1" stroke-width="1.3"/>
+<circle cx="1096" cy="500" r="17" fill="#276bcb"/>
+<text x="1091" y="506" font-size="17" font-weight="700" fill="#fff" font-family="Arial,Helvetica,sans-serif">4</text>
+<text x="1124" y="505" font-size="18" font-weight="700" fill="#1c3a60" font-family="Arial,Helvetica,sans-serif">Ledger ▾</text>
+<text x="1096" y="533" font-size="15" font-weight="400" fill="#4d6581" font-family="Arial,Helvetica,sans-serif">Expand the audit trail, including</text>
+<text x="1096" y="553" font-size="15" font-weight="400" fill="#4d6581" font-family="Arial,Helvetica,sans-serif">attempts, files and chat links.</text>
+<path d="M1072 513 L1044 513 L1044 579 L1008 579" fill="none" stroke="#63a9ff" stroke-width="3" marker-end="url(#arr)"/>
+<text x="40" y="716" font-size="14" font-weight="400" fill="#8da6c9" font-family="Arial,Helvetica,sans-serif">This is a recreation of the actual Run workflow panel • example reference replaces private run identifiers</text>
+<text x="1320" y="716" font-size="13" font-weight="700" fill="#92beef" font-family="Arial,Helvetica,sans-serif">EXEC.5 · OPEN WEBUI</text>
+</svg>

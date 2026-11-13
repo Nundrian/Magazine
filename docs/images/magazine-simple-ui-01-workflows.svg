@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="860" viewBox="0 0 1500 860" role="img" aria-labelledby="t d"><title id="t">Your workflows</title><desc id="d">Workflow library, import and deletion. Faithful diagram of the latest locally installed interface from user-provided screen references; not an original screenshot.</desc><defs><marker id="arr" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8" fill="#63a9ff"/></marker></defs><rect width="1500" height="860" fill="#0c1322"/><rect x="22" y="19" width="1005" height="820" rx="17" fill="#111827" stroke="#62718b" stroke-width="1.5"/><text x="43" y="51" font-size="24" font-weight="700" font-family="Arial,sans-serif" fill="#fff">Magazine</text><text x="1074" y="59" font-size="25" font-family="Arial,sans-serif" font-weight="700" fill="#c7ddff">Your workflows</text><text x="1074" y="87" font-size="15" font-family="Arial,sans-serif" fill="#a7bbd6">Annotations follow the visible controls</text>
+<text x="728" y="52" font-size="16" font-weight="400" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">Appearance</text>
+<rect x="836" y="25" width="170" height="40" rx="7" fill="#172235" stroke="#778399" stroke-width="1.3"/>
+<text x="847" y="51" font-size="16" font-weight="400" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">Follow Open WebUI</text>
+<text x="978" y="50" font-size="22" font-weight="650" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">⌄</text>
+<rect x="42" y="84" width="958" height="728" rx="12" fill="#182234" stroke="#71819b" stroke-width="1.3"/>
+<text x="62" y="120" font-size="21" font-weight="700" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">Your workflows</text>
+<rect x="892" y="102" width="110" height="30" rx="17" fill="#233247" stroke="#7e96a9" stroke-width="1.3"/>
+<text x="912" y="123" font-size="14" font-weight="650" fill="#91ddb0" font-family="Arial,Helvetica,sans-serif">1 workflow</text>
+<text x="64" y="181" font-size="18" font-weight="400" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">Workflow</text>
+<rect x="64" y="192" width="650" height="48" rx="7" fill="#172235" stroke="#778399" stroke-width="1.3"/>
+<text x="75" y="222" font-size="16" font-weight="400" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">Acceptance line (3-step, conflict-free) — 3 steps</text>
+<text x="686" y="221" font-size="22" font-weight="650" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">⌄</text>
+<rect x="730" y="192" width="174" height="48" rx="8" fill="#a6c6ff" stroke="#a6c6ff" stroke-width="1.3"/>
+<text x="743" y="222" font-size="16" font-weight="700" fill="#101b2b" font-family="Arial,Helvetica,sans-serif">Load your workflow</text>
+<rect x="916" y="192" width="91" height="48" rx="8" fill="#111827" stroke="#778399" stroke-width="1.3"/>
+<text x="929" y="222" font-size="16" font-weight="550" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">Refresh</text>
+<text x="64" y="267" font-size="15" font-weight="400" fill="#c0ccde" font-family="Arial,Helvetica,sans-serif">Select a workflow, then choose Load your workflow.</text>
+<text x="64" y="294" font-size="16" font-weight="400" fill="#91ddb0" font-family="Arial,Helvetica,sans-serif">Workflow loaded. Open Workflow steps below to choose models.</text>
+<text x="64" y="334" font-size="18" font-weight="700" fill="#98c0ff" font-family="Arial,Helvetica,sans-serif">▾</text>
+<text x="84" y="334" font-size="19" font-weight="500" fill="#98c0ff" font-family="Arial,Helvetica,sans-serif">Delete workflows</text>
+<text x="64" y="368" font-size="15" font-weight="400" fill="#c0ccde" font-family="Arial,Helvetica,sans-serif">Tick the workflows to remove from the list. Previous work and its results are kept.</text>
+<rect x="64" y="388" width="16" height="16" rx="4" fill="#26344b" stroke="#a8b3c7" stroke-width="1.3"/>
+<text x="90" y="402" font-size="15" font-weight="400" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">Acceptance line (3-step, conflict-free) (acceptance-line)</text>
+<rect x="64" y="423" width="104" height="42" rx="8" fill="#111827" stroke="#778399" stroke-width="1.3"/>
+<text x="77" y="450" font-size="16" font-weight="550" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">Select all</text>
+<rect x="178" y="423" width="100" height="42" rx="8" fill="#111827" stroke="#778399" stroke-width="1.3"/>
+<text x="191" y="450" font-size="16" font-weight="550" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">Clear all</text>
+<rect x="288" y="423" width="152" height="42" rx="8" fill="#111827" stroke="#778399" stroke-width="1.3"/>
+<text x="301" y="450" font-size="16" font-weight="550" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">Delete selected</text>
+<rect x="451" y="423" width="190" height="42" rx="8" fill="#111827" stroke="#778399" stroke-width="1.3"/>
+<text x="464" y="450" font-size="16" font-weight="550" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">Delete all workflows</text>
+<text x="64" y="498" font-size="18" font-weight="700" fill="#98c0ff" font-family="Arial,Helvetica,sans-serif">▾</text>
+<text x="84" y="498" font-size="19" font-weight="500" fill="#98c0ff" font-family="Arial,Helvetica,sans-serif">Add a workflow</text>
+<text x="64" y="530" font-size="18" font-weight="400" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">Workflow ZIP</text>
+<rect x="64" y="543" width="318" height="47" rx="8" fill="#172235" stroke="#778399" stroke-width="1.3"/>
+<rect x="75" y="550" width="91" height="33" rx="8" fill="#111827" stroke="#778399" stroke-width="1.3"/>
+<text x="88" y="572.5" font-size="16" font-weight="550" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">Browse…</text>
+<text x="174" y="572" font-size="15" font-weight="400" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">No file selected.</text>
+<text x="64" y="620" font-size="18" font-weight="400" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">Short name (optional)</text>
+<rect x="64" y="631" width="260" height="44" rx="7" fill="#172235" stroke="#778399" stroke-width="1.3"/>
+<text x="75" y="659" font-size="16" font-weight="400" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">Derived from ZIP filename</text>
+<text x="296" y="658" font-size="22" font-weight="650" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">⌄</text>
+<rect x="64" y="690" width="161" height="42" rx="8" fill="#111827" stroke="#778399" stroke-width="1.3"/>
+<text x="77" y="717" font-size="16" font-weight="550" fill="#edf2fa" font-family="Arial,Helvetica,sans-serif">Add a workflow</text>
+<text x="64" y="760" font-size="16" font-weight="400" fill="#c0ccde" font-family="Arial,Helvetica,sans-serif">Added workflows are shared; your runs and results remain private.</text>
+<rect x="1073" y="115" width="396" height="102" rx="12" fill="#f1f7ff" stroke="#d2e0f1" stroke-width="1.3"/>
+<circle cx="1096" cy="140" r="17" fill="#276bcb"/>
+<text x="1091" y="146" font-size="17" font-weight="700" fill="#fff" font-family="Arial,Helvetica,sans-serif">1</text>
+<text x="1124" y="145" font-size="18" font-weight="700" fill="#1c3a60" font-family="Arial,Helvetica,sans-serif">Workflow ▾</text>
+<text x="1096" y="173" font-size="15" font-weight="400" fill="#4d6581" font-family="Arial,Helvetica,sans-serif">Select a saved workflow.</text>
+<text x="1096" y="193" font-size="15" font-weight="400" fill="#4d6581" font-family="Arial,Helvetica,sans-serif">Load it before choosing models.</text>
+<path d="M1072 153 L1044 153 L1044 218 L1008 218" fill="none" stroke="#63a9ff" stroke-width="3" marker-end="url(#arr)"/>
+<rect x="1073" y="232" width="396" height="102" rx="12" fill="#f1f7ff" stroke="#d2e0f1" stroke-width="1.3"/>
+<circle cx="1096" cy="257" r="17" fill="#276bcb"/>
+<text x="1091" y="263" font-size="17" font-weight="700" fill="#fff" font-family="Arial,Helvetica,sans-serif">2</text>
+<text x="1124" y="262" font-size="18" font-weight="700" fill="#1c3a60" font-family="Arial,Helvetica,sans-serif">Delete workflows ▾</text>
+<text x="1096" y="290" font-size="15" font-weight="400" fill="#4d6581" font-family="Arial,Helvetica,sans-serif">Expand or collapse the deletion list.</text>
+<text x="1096" y="310" font-size="15" font-weight="400" fill="#4d6581" font-family="Arial,Helvetica,sans-serif">Removing definitions keeps past runs.</text>
+<path d="M1072 270 L1044 270 L1044 334 L1008 334" fill="none" stroke="#63a9ff" stroke-width="3" marker-end="url(#arr)"/>
+<rect x="1073" y="351" width="396" height="102" rx="12" fill="#f1f7ff" stroke="#d2e0f1" stroke-width="1.3"/>
+<circle cx="1096" cy="376" r="17" fill="#276bcb"/>
+<text x="1091" y="382" font-size="17" font-weight="700" fill="#fff" font-family="Arial,Helvetica,sans-serif">3</text>
+<text x="1124" y="381" font-size="18" font-weight="700" fill="#1c3a60" font-family="Arial,Helvetica,sans-serif">Add a workflow ▾</text>
+<text x="1096" y="409" font-size="15" font-weight="400" fill="#4d6581" font-family="Arial,Helvetica,sans-serif">Expand to import a ZIP and</text>
+<text x="1096" y="429" font-size="15" font-weight="400" fill="#4d6581" font-family="Arial,Helvetica,sans-serif">set an optional short name.</text>
+<path d="M1072 389 L1044 389 L1044 498 L1008 498" fill="none" stroke="#63a9ff" stroke-width="3" marker-end="url(#arr)"/>
+<rect x="1073" y="470" width="396" height="102" rx="12" fill="#f1f7ff" stroke="#d2e0f1" stroke-width="1.3"/>
+<circle cx="1096" cy="495" r="17" fill="#276bcb"/>
+<text x="1091" y="501" font-size="17" font-weight="700" fill="#fff" font-family="Arial,Helvetica,sans-serif">4</text>
+<text x="1124" y="500" font-size="18" font-weight="700" fill="#1c3a60" font-family="Arial,Helvetica,sans-serif">Appearance ▾</text>
+<text x="1096" y="528" font-size="15" font-weight="400" fill="#4d6581" font-family="Arial,Helvetica,sans-serif">Follow Open WebUI or choose</text>
+<text x="1096" y="548" font-size="15" font-weight="400" fill="#4d6581" font-family="Arial,Helvetica,sans-serif">light/dark display.</text>
+<path d="M1072 508 L1044 508 L1044 47 L1008 47" fill="none" stroke="#63a9ff" stroke-width="3" marker-end="url(#arr)"/>
+<text x="40" y="836" font-size="14" font-weight="400" fill="#8da6c9" font-family="Arial,Helvetica,sans-serif">Rebuilt to match the actual Magazine Simple 0.2.0-exec.5 layout • illustrative data, not a screenshot</text>
+<text x="1320" y="836" font-size="13" font-weight="700" fill="#92beef" font-family="Arial,Helvetica,sans-serif">EXEC.5 · OPEN WEBUI</text>
+</svg>

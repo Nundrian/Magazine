@@ -1,6 +1,6 @@
 # Changelog
 
-## Magazine Simple 0.2.0-exec.5 — locally installed, 13 November 2026
+## Magazine Simple 0.2.0-exec.5 — installed, source-matched, 13 November 2026
 
 **Local installation and documentation update — not a public runner release.** The newer Open WebUI Simple Function was updated in place, keeping its Function ID and existing run data. This repository now documents its streamlined library, model-assignment, Terminal/tool selection, READY/start separation, ledger, run history and deletion controls.
 
@@ -11,7 +11,7 @@
 - Added a complete [illustrated HTML interface guide](docs/guide/index.html), split into four annotated sections; updated the workflow/handover diagrams.
 - Added the supplied **Magazine Simple Sidebar Launcher 0.1.0** source for Open WebUI 0.12.5. The launcher points to `/magazine-simple` and remains separate from the runner.
 
-**Not published with this update:** the verified exec.5 Function source or installable runner ZIP. The public beta.5 download remains unchanged. See [exec.5 evidence](docs/SIMPLE_0.2.0_EXEC5.md) and [launcher notes](docs/SIDEBAR_LAUNCHER.md).
+**Now published for code review:** the exact 111,367-byte exec.5 Function source (SHA-256 `400f8bf4…1309`) at [`integrations/open_webui/function/magazine_simple_exec5.py`](integrations/open_webui/function/magazine_simple_exec5.py). **Not independently verified as a clean-install release:** an exec.5 installer ZIP or fresh-host acceptance. The separate historical beta.5 download is unchanged. See [exec.5 evidence](docs/SIMPLE_0.2.0_EXEC5.md) and [launcher notes](docs/SIDEBAR_LAUNCHER.md).
 
 ---
 

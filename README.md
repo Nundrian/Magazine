@@ -50,7 +50,7 @@ A workflow can contain as many cartridges as its author designs, subject to prac
 
 ## Real-world test: 72-cartridge game build (14 November 2026)
 
-Magazine Simple **0.2.0-exec.5** completed a full **72-cartridge** local-model workflow to build *Nebula Run v3 — Stage 1: Cinder Reach*, a browser-based horizontal shooter. The retained Open WebUI **0.12.5** run records **72/72 cartridges done, with one attempt each**, using **Bonsai 2 27B** and Open Terminal. The run took approximately **two hours** and produced a **7.3 MB game ZIP** with verified Magazine file handovers.
+Magazine Simple **0.2.0-exec.5** completed a full **72-cartridge** local-model workflow to build *Nebula Run v3 — Stage 1: Cinder Reach*, a browser-based horizontal shooter. The retained Open WebUI **0.12.5** run records **72/72 cartridges done, with one attempt each**, using **Bonsai 2 27B** and Open Terminal. The operator reports the complete run lasted **over eight hours**, also providing screenshots as timing evidence; the exported Magazine ledger itself spans only **1 hour 59 minutes 39 seconds** (00:23:49–02:23:28 UTC). The discrepancy remains unresolved, so the shorter recorded interval must **not** be treated as the total elapsed time. The workflow produced a **7.3 MB game ZIP** with verified Magazine file handovers.
 
 The generated game's test suite reported **64 passes, 0 failures**; a software-canvas visual gate passed; and a simulated playthrough reached stage clear. The operator subsequently **confirmed the game ran in Firefox**. The runner itself recorded the browser check as **NOT TESTED**, so this is a user-confirmed desktop execution, not an automated Firefox compatibility or playability certification.
 

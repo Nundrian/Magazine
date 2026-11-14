@@ -11,13 +11,16 @@
 | Executor | `bonsai-2:27b` across all cartridges |
 | Magazine status | `completed` |
 | Completion | **72/72 cartridges `done`; 72 attempts total, no cartridge retries recorded** |
-| Duration | 14 November 2026, 00:23:49–02:23:28 UTC (approximately 2 hours) |
+| Overall duration (operator-reported) | **Over 8 hours**; exact start and end times not independently established from the export | 
+| Captured Magazine run interval | 14 November 2026, 00:23:49–02:23:28 UTC (**1 hour 59 minutes 39 seconds**) |
 | Terminal | Open Terminal |
 | Additional tools recorded | Browser Bridge, Magazine Auto Approval Standard, Fresh Worker, Development Toolkit |
 | Final output | `Nebula-Run-Stage1-Playable.zip` — 7,306,112 bytes, 67 packaged files |
 | Final archive SHA-256 | `c6b5585b1da3ce031358d60b4b83e4bd4fbc37bb59d1d7ca4a9b09ebb29d4367` |
 
 The retained Magazine export contains `LEDGER.md`, `run.json`, 72 saved cartridge responses and prompts, declared inputs/outputs, per-cartridge SHA-256 records and the final game package. The last cartridge produced both the playable game ZIP and `final-acceptance.json`.
+
+**Duration reconciliation:** The operator clarified that the overall game run took **over eight hours**. The exported `run.json` and the individual cartridge `started`/`finished` fields cover only **1:59:39**, with 72 sequential attempts logged between 00:23:52 and 02:23:28 UTC. The records do not explain the difference; neither elapsed-time figure should be silently substituted for the other. The shorter interval is **the captured Magazine ledger interval**, not an independently verified total for all game-development activity.
 
 ### What the game evidence shows
 

@@ -20,7 +20,7 @@
 
 The retained Magazine export contains `LEDGER.md`, `run.json`, 72 saved cartridge responses and prompts, declared inputs/outputs, per-cartridge SHA-256 records and the final game package. The last cartridge produced both the playable game ZIP and `final-acceptance.json`.
 
-**Duration reconciliation:** The operator clarified that the overall game run took **over eight hours**. The exported `run.json` and the individual cartridge `started`/`finished` fields cover only **1:59:39**, with 72 sequential attempts logged between 00:23:52 and 02:23:28 UTC. The records do not explain the difference; neither elapsed-time figure should be silently substituted for the other. The shorter interval is **the captured Magazine ledger interval**, not an independently verified total for all game-development activity.
+**Duration reconciliation:** The operator clarified that the complete game run took **over eight hours** and supplied timing screenshots as additional evidence. The exported `run.json` and the individual cartridge `started`/`finished` fields cover only **1:59:39**, with 72 sequential attempts logged between 00:23:52 and 02:23:28 UTC. The export does not explain the discrepancy, so the shorter period must **not** be presented as the full wall-clock duration. An exact independent start-to-finish measurement is not established from the exported fields.
 
 ### What the game evidence shows
 

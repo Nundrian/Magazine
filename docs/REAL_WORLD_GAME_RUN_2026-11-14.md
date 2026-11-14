@@ -11,8 +11,7 @@
 | Executor | `bonsai-2:27b` across all cartridges |
 | Magazine status | `completed` |
 | Completion | **72/72 cartridges `done`; 72 attempts total, no cartridge retries recorded** |
-| Overall duration (operator-reported) | **Over 8 hours**; exact start and end times not independently established from the export | 
-| Captured Magazine run interval | 14 November 2026, 00:23:49–02:23:28 UTC (**1 hour 59 minutes 39 seconds**) |
+| Recorded duration | 14 November 2026, 00:23:49–02:23:28 UTC (**1 hour 59 minutes 39 seconds**) |
 | Terminal | Open Terminal |
 | Additional tools recorded | Browser Bridge, Magazine Auto Approval Standard, Fresh Worker, Development Toolkit |
 | Final output | `Nebula-Run-Stage1-Playable.zip` — 7,306,112 bytes, 67 packaged files |
@@ -20,7 +19,7 @@
 
 The retained Magazine export contains `LEDGER.md`, `run.json`, 72 saved cartridge responses and prompts, declared inputs/outputs, per-cartridge SHA-256 records and the final game package. The last cartridge produced both the playable game ZIP and `final-acceptance.json`.
 
-**Duration reconciliation:** The operator clarified that the complete game run took **over eight hours** and supplied timing screenshots as additional evidence. The exported `run.json` and the individual cartridge `started`/`finished` fields cover only **1:59:39**, with 72 sequential attempts logged between 00:23:52 and 02:23:28 UTC. The export does not explain the discrepancy, so the shorter period must **not** be presented as the full wall-clock duration. An exact independent start-to-finish measurement is not established from the exported fields.
+**Timing provenance:** The retained `run.json` records approximately two hours, and the 72 sequential cartridge timestamps fall within that interval. The operator initially estimated over eight hours but subsequently reconsidered that estimate after reviewing screenshots. The elapsed time presented here is therefore the duration recorded by Magazine, not an independently measured stopwatch total.
 
 ### What the game evidence shows
 

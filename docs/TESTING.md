@@ -6,6 +6,21 @@
 
 Magazine has been tested at several levels. The numbers below are from the beta.5 acceptance record; the live Bonsai tests described separately were performed against the preceding beta.4 baseline.
 
+## Current installed runner: 0.2.0-handover.1 (15 November 2026)
+
+This is **new, separate evidence**, not part of the 989 beta.5 checks below. The existing Open WebUI 0.12.5 Function was updated in place without changing other Functions, Workspace Tools or the sidebar launcher.
+
+- **Offline:** 193 passed, **90 skipped** (36 Chromium + 36 Firefox unavailable executables, 16 optional screenshots, two unavailable historical fixtures). These skips are not passes.
+- **Real-model acceptance:** Four controlled scenarios using **only Bonsai 2 27B** exercised committed handover despite malformed chat text, missing-result fresh-chat publication recovery, expected rejection of an incorrect saved-chat identity, and fresh-chat staged-output repair after a missing required file. An earlier fifth trial was fixed inside its original chat; it is not proof of automatic runner repair.
+- **Saved evidence:** All **11 actual worker chat archives** across five acceptance runs were reopened from UI-downloaded ZIPs and verified against message IDs and hashes, as were **eight** committed result documents and markers. The rejected identity run was expected to stop without launching a consumer; another queued run advanced.
+- **Safety boundaries:** No claims of successful cross-model testing, live power-loss durability, destructive production restart, or general semantic correctness. The 72-cartridge game belongs to exec.5. No clean-install validation or standalone public installer has been established for handover.1.
+
+Run IDs and detailed failures/limits: [handover.1 engineering and verification record](SIMPLE_0.2.0_HANDOVER1.md). The public [exec.5 source](../integrations/open_webui/function/magazine_simple_exec5.py) is **not** handover.1 code.
+
+---
+
+## Historical beta.5 evidence (14 October 2026)
+
 ## Automated regressions
 
 | Test suite | Result | What it exercises |

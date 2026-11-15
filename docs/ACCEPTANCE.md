@@ -1,6 +1,6 @@
 # Magazine 0.1.0-beta.5 acceptance
 
-> **Historical documentation — Magazine 0.1.0-beta.5 (Open WebUI 0.11.3-era).** This record is preserved for its original release, evidence and technical context; it does **not** describe or validate Magazine Simple **0.2.0-exec.5**. See the [current Simple engineering reference](SIMPLE_0.2.0_EXEC5.md) and [main README](../README.md).
+> **Historical documentation — Magazine 0.1.0-beta.5 (Open WebUI 0.11.3-era).** This record is preserved for its original release, evidence and technical context; it does **not** describe or validate Magazine Simple **0.2.0-exec.5** or **0.2.0-handover.1**. See the [current handover.1 engineering record](SIMPLE_0.2.0_HANDOVER1.md), [historical exec.5 record](SIMPLE_0.2.0_EXEC5.md) and [main README](../README.md).
 
 Date: 14 October 2026. Focus: dedicated original Input ZIPs and Finished Work.
 Candidate prepared locally; no GitHub publication or live deployment authorized.

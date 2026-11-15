@@ -2,7 +2,7 @@
 
 **Installed locally:** 15 November 2026 · **Host:** Open WebUI 0.12.5 · **Route:** `/magazine-simple` · **Function:** existing `magazine_simple`, updated in place.
 
-**Distribution boundary:** This document describes a locally installed and tested update. The maintainer supplied a verified release bundle containing the new Function, Python publisher, tests, offline logs and live evidence. **The new Function source and bundle have not been added to this public GitHub repository in this documentation update.** The linked [exec.5 source](../integrations/open_webui/function/magazine_simple_exec5.py) is an *earlier* implementation; do not mistake it for handover.1 or its installer.
+**Distribution boundary:** The [verified handover.1 Function source](../integrations/open_webui/function/magazine_simple_handover1.py) and [standalone publisher helper](../integrations/open_webui/function/magazine_publish_helper_handover1.py) are now published for inspection and source-based use. The helper is embedded in the Function, and is **not** a second Open WebUI Function to install. The maintainer's full release bundle (tests, offline logs and live evidence ZIPs) has **not** been published here. Installation was accepted as an update to an existing local Function; an independently verified clean installation on a fresh host is **not** claimed. The [exec.5 source](../integrations/open_webui/function/magazine_simple_exec5.py) is the historical predecessor.
 
 [Main README](../README.md) · [Testing chronology](TESTING.md) · [Earlier exec.5 engineering reference](SIMPLE_0.2.0_EXEC5.md)
 
@@ -91,16 +91,16 @@ Tests covered strict result parsing, identity checks, pointer resolution, missin
 
 | File/state | SHA-256 |
 | --- | --- |
-| Tested `magazine_simple.py` source in supplied bundle | `55e7a7da26e0bea0ab4c0b485ac345d9f5330400a49eb379a0b8591a1f1e782c` |
+| [Tested `magazine_simple.py` source, now published](../integrations/open_webui/function/magazine_simple_handover1.py) | `55e7a7da26e0bea0ab4c0b485ac345d9f5330400a49eb379a0b8591a1f1e782c` |
 | Locally installed, Open WebUI-formatted Function | `47137786e731ff4bf081e407340b69a15c75637407acc1dbec23f07ee9d33b50` |
 
-The installer's report records an **AST match**, rather than byte identity, between the tested source and Open WebUI's formatted source. The old exec.5 Function source and Function record were preserved for rollback. The sidebar launcher, other Magazine Functions and existing Workspace Tools were not changed; no production container or volume was recreated.
+The installer's report records an **AST match**, rather than byte identity, between the tested source and Open WebUI's formatted source. GitHub's tracked Function file is **byte-identical to the tested release source**, verified by its Git blob SHA-1 `df14e2df3e006176b3b0eec01a0ee725d26eba29`. The separately published helper is byte-identical to the bundle's `publish_helper.py` (SHA-256 `3468e35a2d78164e0d496ed8305f658255dcc2f11029eda6be9fe9ab080b0eed`). The old exec.5 Function source and Function record were preserved for rollback. The sidebar launcher, other Magazine Functions and existing Workspace Tools were not changed; no production container or volume was recreated.
 
 The supplied report also notes that the identity fault injector's log has a **display-reference discrepancy**; its original byte hash and intended chat identity are separately recorded, and the log was preserved without rewriting it.
 
 ## Usage and rollback
 
-New workflows are prepared and started as before, using a workspace-capable Terminal/tools selection. Existing handover declarations and selectors are unchanged. `/api/magazine-simple` and `/magazine-simple` remain the integration paths.
+On an existing Open WebUI 0.12.5 deployment, the published Function source is intended for the Open WebUI Function editor. Back up the active Function first and update only while the Magazine queue is idle; do not replace the Sidebar Launcher with the publisher helper. **The published source is not accompanied by a separately accepted fresh-install procedure or a public installer ZIP.** New workflows are prepared and started as before, using a workspace-capable Terminal/tools selection. Existing handover declarations and selectors are unchanged. `/api/magazine-simple` and `/magazine-simple` remain the integration paths.
 
 If a rollback is required, the maintainer's procedure is to wait until the Magazine queue is idle, restore the preserved **exec.5 Function source** in the Open WebUI Function editor, save and refresh the page. Keep new runs and evidence archived: **exec.5 does not understand the new committed-result protocol**. No rollback execution was claimed in this update.
 

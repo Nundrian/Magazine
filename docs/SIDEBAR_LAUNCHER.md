@@ -2,7 +2,7 @@
 
 **Source provided by maintainer:** 13 November 2026.  
 **Required host version declared in Function metadata:** Open WebUI **0.12.5**.  
-**Related runner:** locally installed Magazine Simple **0.2.0-exec.5** at `/magazine-simple`.
+**Related runner:** locally installed Magazine Simple **0.2.0-handover.1** at `/magazine-simple` (15 November 2026). The launcher itself remains **0.1.0**, unchanged.
 
 [Back to the README](../README.md) · [Source file](../integrations/open_webui/function/magazine_simple_sidebar_launcher.py) · [Visual interface guide](guide/index.html)
 
@@ -16,7 +16,7 @@ The embedded JavaScript is labelled **"No tokens, API calls or workflow actions"
 
 | Integration | Route | Status |
 | --- | --- | --- |
-| **Magazine Simple runner** | `/magazine-simple` | Installed locally as 0.2.0-exec.5; source not included in the public beta.5 installer |
+| **Magazine Simple runner** | `/magazine-simple` | Current local Function is 0.2.0-handover.1; [installation and test record](SIMPLE_0.2.0_HANDOVER1.md). Its new source is not yet published here. |
 | **Magazine Simple Sidebar Launcher 0.1.0** | Adds a link to `/magazine-simple` | Supplied source in this repository; separate from the runner |
 | **Older beta.5 Function** | `/magazine` | Public downloadable legacy build, accepted for Open WebUI 0.11.3 |
 | **Older patched-Docker sidebar** | `/magazine` | Historical, independent integration; custom image distribution remains on hold |

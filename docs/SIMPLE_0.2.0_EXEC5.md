@@ -1,6 +1,8 @@
-# Magazine Simple 0.2.0-exec.5 — engineering reference
+# Magazine Simple 0.2.0-exec.5 — historical engineering reference
 
 **Version:** `0.2.0-exec.5` · **Open WebUI host:** `0.12.5` (declared and locally tested) · **Recorded installation date:** 13 November 2026.
+
+> **Historical version, superseded locally on 15 November 2026 by [0.2.0-handover.1](SIMPLE_0.2.0_HANDOVER1.md).** This document preserves exec.5 source behaviour, hashes and acceptance evidence. In particular, statements below that exec.5 has no automatic retries describe the older implementation and **must not be applied to handover.1**.
 
 **Canonical source:** [`magazine_simple_exec5.py`](../integrations/open_webui/function/magazine_simple_exec5.py), **111,367 UTF-8 bytes**, SHA-256:
 
@@ -16,7 +18,7 @@ The uploaded source was byte-matched to the local installation record before pub
 
 | Location | Purpose | Version scope |
 | --- | --- | --- |
-| [`integrations/open_webui/function/magazine_simple_exec5.py`](../integrations/open_webui/function/magazine_simple_exec5.py) | Self-contained Magazine Simple Event Function: current runner, page, API routes and engine | **0.2.0-exec.5** — the locally accepted, source-matched implementation |
+| [`integrations/open_webui/function/magazine_simple_exec5.py`](../integrations/open_webui/function/magazine_simple_exec5.py) | Self-contained Magazine Simple Event Function: historical runner, page, API routes and engine | **0.2.0-exec.5** — the formerly installed, source-matched implementation |
 | [`integrations/open_webui/function/magazine_simple_sidebar_launcher.py`](../integrations/open_webui/function/magazine_simple_sidebar_launcher.py) | Independent navigation-only Sidebar Launcher | **0.1.0** (for Open WebUI 0.12.5) |
 | [`integrations/open_webui/function/magazine_ef.py`](../integrations/open_webui/function/magazine_ef.py) and [`magazine/`](../magazine/) | Previous, larger Function and execution core; retained to support historical source and releases | **Legacy beta.5**, not the Simple runner |
 | [`tests/`](../tests/) and [`integrations/open_webui/function/tests/`](../integrations/open_webui/function/tests/) | Historical core, Function and interface regressions | **Legacy beta.5 tests**; not an exec.5 acceptance suite |

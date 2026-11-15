@@ -4,9 +4,9 @@
 
 Magazine helps smaller language models tackle larger projects by breaking the work into **prewritten, manageable tasks** called *cartridges*. Each cartridge gets a fresh Open WebUI chat with its assigned model. Magazine executes them in order, preserves the work and passes along declared files or values when the next step needs them.
 
-The idea is straightforward: let the model concentrate on **one job at a time**, while Magazine handles the sequence. Magazine does not plan the project for you, automatically repair mistakes, or guarantee a correct result.
+The idea is straightforward: let the model concentrate on **one job at a time**, while Magazine handles the sequence. Magazine does not plan the project or judge whether a model's work is correct. The current runner can make **bounded, targeted recovery attempts** when publication or eligible output-file steps fail; those retries do not guarantee a correct result.
 
-**Current local version:** **Magazine Simple 0.2.0-exec.5** on Open WebUI **0.12.5** (13 November 2026). **Sidebar Launcher:** **0.1.0**, installed separately.
+**Current locally installed version:** **Magazine Simple 0.2.0-handover.1** on Open WebUI **0.12.5** (15 November 2026). **Sidebar Launcher:** **0.1.0**, separately installed and unchanged. This page documents a verified *local update*; a separate public clean-install acceptance has not been reported.
 
 ## This is what Magazine looks like
 
@@ -46,7 +46,21 @@ flowchart LR
     F --> G["Ledger, results<br/>and export ZIP"]
 ```
 
-A workflow can contain as many cartridges as its author designs, subject to practical limits. Cartridges can use the same model or different models. Declared file handovers are checked against recorded hashes; saved replies and Open WebUI chats remain available for inspection. **Finished** means execution completed and the result was stored, **not** that every answer was correct.
+A workflow can contain as many cartridges as its author designs, subject to practical limits. Cartridges can use the same model or different models. In newly prepared runs, file-based results are checked and committed before downstream cartridges begin; original Open WebUI chats remain available for inspection. **Finished** means execution completed and the results were stored, **not** that every answer was correct.
+
+## New: verified file handover and bounded recovery (15 November 2026)
+
+Magazine Simple **0.2.0-handover.1** is installed in the existing Open WebUI Function. It keeps the same cartridge workflow and page while strengthening the handover between fresh chats:
+
+- **Attempt-scoped results:** a standard-library Python publisher writes a result file tied to the run, cartridge, attempt and saved chat. The model no longer needs to reproduce an entire handover JSON object accurately in its final chat text.
+- **Verification before handover:** Magazine requires DONE, checks declared files and outgoing selectors, validates result identity and commits accepted data with SHA-256 checks and a read-back. The next cartridge rechecks the committed evidence.
+- **Complete attempt evidence:** original saved chats, including tool calls/results, are archived with hashes and included in downloaded result ZIPs.
+- **Targeted automatic recovery:** missing/invalid result publication can trigger a fresh verification chat; eligible staged-file failures can trigger a fresh repair chat. The defaults are **at most two fresh model retries per cartridge within 900 seconds**, plus up to two transient-storage retries. Repeated failures without verified progress stop earlier.
+- **Safe boundaries:** explicit HALT, Stop, identity/integrity failures, exhausted budgets and incomplete commits stop the affected run. There is no automatic crash resume, task replanning or model substitution. Tasks without declared staged outputs cannot be given automatic edit-repair attempts.
+
+**Existing saved runs are kept in legacy compatibility mode**, not silently converted. The failed 3D Resource Kit run was preserved without being restarted. Workflow authors can select `handover_mode: legacy_chat` for compatibility or configure bounded recovery in `magazine.yaml`.
+
+[Technical details and recovery options](docs/SIMPLE_0.2.0_HANDOVER1.md) · [New acceptance evidence](docs/TESTING.md)
 
 ## Real-world test: 72-cartridge game build (14 November 2026)
 
@@ -56,48 +70,60 @@ The generated game's test suite reported **64 passes, 0 failures**; a software-c
 
 This demonstrates substantial real-world multi-cartridge execution and a runnable game deliverable, **not** perfect game quality or guaranteed success on other projects. The final audit also retained **one expected-file hash mismatch** in an enemy-art script despite passing tests.
 
-**[Read the full evidence, run configuration and limitations](docs/REAL_WORLD_GAME_RUN_2026-11-14.md).** This result is separate from the earlier short exec.5 acceptance test and from historical beta.5 regression counts.
+**[Read the full evidence, run configuration and limitations](docs/REAL_WORLD_GAME_RUN_2026-11-14.md).** This run used **exec.5**, not the later handover.1 version. It remains valuable historical evidence, not a handover.1 acceptance run.
 
-## Versions and files
+## Versions, source and release boundaries
 
 | Component | Version | Availability |
 | --- | --- | --- |
-| **Magazine Simple runner** | **0.2.0-exec.5** | [Exact installed-source file](integrations/open_webui/function/magazine_simple_exec5.py) now published for inspection and development. Locally installed and live-tested; **no separately verified public installer or clean-install acceptance**. Page: `/magazine-simple`. |
-| **Simple Sidebar Launcher** | **0.1.0** | [Separate launcher source](integrations/open_webui/function/magazine_simple_sidebar_launcher.py). Adds a link opening `/magazine-simple` in a new tab on the tested Open WebUI 0.12.5 host; it does **not** run cartridges. |
-| **Earlier Magazine Function** | 0.1.0-beta.5 | [Historical Function-only ZIP](downloads/Magazine-0.1.0-beta.5-FunctionOnly.zip) for its accepted Open WebUI 0.11.3 baseline, at `/magazine`. **Not an exec.5 update.** |
+| **Magazine Simple runner (current local installation)** | **0.2.0-handover.1** | Installed and live-tested on Open WebUI 0.12.5. The supplied release bundle contains source and tests, but **its new source is not yet published as a repository file or independently accepted as a public clean-install package**. See [engineering notes](docs/SIMPLE_0.2.0_HANDOVER1.md). Page: `/magazine-simple`. |
+| **Earlier Simple runner (historical source)** | **0.2.0-exec.5** | [Source as installed on 13 November](integrations/open_webui/function/magazine_simple_exec5.py), preserved for inspection. **Not** the newly installed handover.1 code. [Older engineering reference](docs/SIMPLE_0.2.0_EXEC5.md). |
+| **Simple Sidebar Launcher** | **0.1.0** | [Separate launcher source](integrations/open_webui/function/magazine_simple_sidebar_launcher.py). Adds a link opening `/magazine-simple` on the tested Open WebUI 0.12.5 host; it does **not** execute cartridges. |
+| **Earlier Magazine Function** | **0.1.0-beta.5** | [Historical Function-only ZIP](downloads/Magazine-0.1.0-beta.5-FunctionOnly.zip), accepted against Open WebUI 0.11.3, at `/magazine`. Not an installer for Magazine Simple. |
 
-The original Docker-patched sidebar integration remains in [the historical source](integrations/open_webui/frontend/README.md) for future reference. Its custom Docker image is **not** an approved public binary release. Do not confuse that integration with the current independent Sidebar Launcher.
+The older patched-Docker sidebar integration remains [historical source](integrations/open_webui/frontend/README.md), not an approved public binary release. The [illustrated UI guide](docs/guide/index.html) reproduces the **13 November exec.5 controls**, not a newly captured handover.1 browser session.
 
-### What has actually been tested?
+### Testing, correctly attributed
 
-On **13 November 2026**, the local exec.5 update preserved **178 existing run files** with identical hashes. A live **three-cartridge acceptance workflow** finished with Qwen3 Coder, Open Terminal calls in steps 2 and 3, a verified file handover and a `match: true` result. The inline `{"status":"DONE"}` completion case was exercised.
+**15 November — handover.1:** **193 passed / 90 skipped** in isolated offline testing. The skips include unavailable Chromium and Firefox executables (72 cases), optional screenshots (16) and unavailable legacy fixtures (2). Real Open WebUI/Bonsai testing covered successful malformed-chat-text handover, missing-result recovery, rejection of wrong-chat identity, and fresh-chat repair of a removed required output. **11 actual Bonsai chats** and **eight committed results** were verified from downloaded evidence ZIPs. One additional repair trial completed but was repaired within the original chat; it does not count as proof of runner-level fresh-chat repair. **No other production model was tested on handover.1.**
 
-The previous-work deletion interface was checked in Chromium, but no live deletion was carried out. Firefox interactions and the container logs were not verified.
+**13–14 November — exec.5:** A live three-step Qwen3 Coder acceptance workflow completed with Terminal calls and verified file handover; a separate Bonsai 72-cartridge game-building workflow completed. These test the **older** version and are retained rather than reattributed.
 
-The earlier beta.5 version had **989 passing automated regression tests**. These remain valid *historical* results; they were **not rerun on exec.5**.
+**October — beta.5:** **989 automated regressions** across the previous implementation. These are historical, **not** handover.1 test results.
 
-[Full exec.5 acceptance evidence and limitations](docs/SIMPLE_0.2.0_EXEC5.md) · [Historical testing](docs/TESTING.md) · [Changelog](CHANGELOG.md)
+The handover.1 installation report also records that the existing Function was updated in place, other Functions and Workspace Tools remained unchanged, and historical project files were preserved. Crash boundaries were simulated offline; production service restart/power-loss durability was not tested. A committed result verifies integrity and structure, **not semantic correctness**.
+
+[New technical record](docs/SIMPLE_0.2.0_HANDOVER1.md) · [Testing chronology](docs/TESTING.md) · [Changelog](CHANGELOG.md)
 
 <details>
-<summary><strong>For coders and engineers — technical details</strong></summary>
+<summary><strong>For coders and engineers — implementation overview</strong></summary>
 
-Magazine Simple is a native Open WebUI **Event Function** that registers a page and authenticated `/api/magazine-simple` endpoints. It creates fresh chats through Open WebUI's usual APIs and reads the saved assistant result. The engine uses a **single active run per Python process** with an **in-memory FIFO queue** (not a distributed lock).
+Magazine Simple is an Open WebUI **Event Function** serving `/magazine-simple` and authenticated `/api/magazine-simple` routes. Work is sequential, with one active run per Python process and an in-memory FIFO queue; this is **not a multi-process distributed lock** or a crash-persistent queue.
 
-The default completion rule requires a closing `{"status":"DONE"}` and any declared outputs. A model can return `{"status":"HALT","reason":"..."}`. There is **no automatic retry, planning, review, compaction or inference time limit**. A human can restart from a cartridge if all earlier ones finished.
+Newly prepared runs default to `handover_mode: result_file_v1`. A protected attempt descriptor and Python publisher bind each result to its run/cartridge/attempt/chat identity. The runner verifies outputs, result JSON, required pointers and chat identity; accepted results are committed with hashes and checked again before downstream consumption. Saved chat archives include real tool-call evidence. Existing runs without an explicit mode retain `legacy_chat` semantics, with an added outgoing-selector guard.
 
-Saved runs are **owner-scoped**, while the **workflow library is shared** and any authenticated user can import or delete workflow definitions. Files are passed using explicit `artifacts.inputs`/`artifacts.outputs`, with source-byte SHA-256 verification. The normal output includes `LEDGER.md`, saved prompts/replies, workflow details and a results ZIP.
+```yaml
+# Optional top-level magazine.yaml fields for new runs
+handover_mode: result_file_v1
+result_profile: generic       # or magazine.task.v1
+recovery:
+  max_retries: 2              # integer 0–5
+  seconds: 900                # integer 30–7200; total cartridge budget
+  io_retries: 2               # integer 0–5
+```
 
-The exact [exec.5 source](integrations/open_webui/function/magazine_simple_exec5.py) is 111,367 bytes and matches the local installed SHA-256:
-`400f8bf4739bac012ce5c0036eb0ecbcf098695e2a9726a00eef84df934d1309`.
+For a cartridge with declared staged output files, `retry_safe: false` disables automatic edit-repair. Publication-only retries can still apply under the documented failure conditions. A fresh chat is created per retry; the earlier candidate files and full chat evidence are retained. The `require_done_line` valve cannot disable DONE in the new file protocol.
 
-**Source code map:** [Current Simple runner](integrations/open_webui/function/magazine_simple_exec5.py) · [Sidebar Launcher](integrations/open_webui/function/magazine_simple_sidebar_launcher.py) · [Legacy beta.5 Function](integrations/open_webui/function/magazine_ef.py) · [Legacy execution core](magazine/) and [tests](tests/). The legacy core and test suite are **not** the exec.5 implementation or its regression suite.
+Stored runs are **owner-scoped** while the workflow library is **shared**, and any authenticated user can import/delete workflow definitions. Select tools and Terminal deliberately; operational recovery instructions are not an operating-system sandbox.
 
-**[Read the engineering reference](docs/SIMPLE_0.2.0_EXEC5.md)** for API routes, storage layout, YAML examples, limits, completion parsing, stop/restart semantics, queue durability, valves, security boundaries and verification evidence.
+**Source status:** [exec.5 source](integrations/open_webui/function/magazine_simple_exec5.py) is preserved as the preceding version. The newly installed source had tested SHA-256 `55e7a7da26e0bea0ab4c0b485ac345d9f5330400a49eb379a0b8591a1f1e782c`; Open WebUI formatted its installed copy to `47137786e731ff4bf081e407340b69a15c75637407acc1dbec23f07ee9d33b50`. The reported AST comparison matched, but **these current sources have not been published in this repository**.
+
+Read [the new engineering record](docs/SIMPLE_0.2.0_HANDOVER1.md) for precise failure modes, test scope, deployment and rollback limitations; read the [exec.5 reference](docs/SIMPLE_0.2.0_EXEC5.md) for historical implementation details.
 
 </details>
 
 ## Licence and safety
 
-Magazine is published under the [MIT licence](LICENSE). Open WebUI and other software retain their own licences. Review workflows and selected tools before running them. For the latest Simple version, source identity and one local acceptance workflow have been verified; no broader production-readiness certification is claimed.
+Magazine is published under the [MIT licence](LICENSE). Open WebUI and other software retain their own licences. Review workflows and selected tools before running them. For handover.1, the supplied installation evidence records source identity, offline checks and selected live Bonsai recovery tests. This is not a clean-install, general security or production-readiness certification.
 
 [Historical beta.5 security notes](docs/SECURITY.md) · [Sidebar Launcher details](docs/SIDEBAR_LAUNCHER.md) · [Illustrated guide](docs/guide/index.html)

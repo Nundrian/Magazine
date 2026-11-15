@@ -17,6 +17,12 @@ This is **new, separate evidence**, not part of the 989 beta.5 checks below. The
 
 Run IDs and detailed failures/limits: [handover.1 engineering and verification record](SIMPLE_0.2.0_HANDOVER1.md). The [byte-verified handover.1 source](../integrations/open_webui/function/magazine_simple_handover1.py) and [matching standalone publisher helper](../integrations/open_webui/function/magazine_publish_helper_handover1.py) are now public. The older [exec.5 source](../integrations/open_webui/function/magazine_simple_exec5.py) is historical. Publishing code does **not** mean the private test artefacts or a fresh-install acceptance have been published.
 
+## Live development-workflow recovery — 15 November 2026
+
+A separate **187-cartridge 3D Resource Kit** development run provided an observed c012 recovery on **handover.1**: attempt 1 ended with `DONE_MISSING`, a fresh attempt preserved and corrected the earlier work, the result publisher succeeded, and the Magazine ledger shows **c012 attempt 2 done** followed immediately by **c013 running**. This confirms recovery and downstream continuation for this one case; it does not confirm completion of the 187-cartridge workflow. **Caveat:** the publication-only recovery chat made an edit contrary to its instruction; this is documented as a model boundary violation, not a validated safety guarantee.
+
+[Recovery case with cropped ledger screenshot and technical chronology](REAL_WORLD_RECOVERY_2026-11-15.md).
+
 ---
 
 ## Historical beta.5 evidence (14 October 2026)

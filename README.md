@@ -62,6 +62,18 @@ Magazine Simple **0.2.0-handover.1** is installed in the existing Open WebUI Fun
 
 [Technical details and recovery options](docs/SIMPLE_0.2.0_HANDOVER1.md) · [New acceptance evidence](docs/TESTING.md)
 
+## Real-world recovery: a failed cartridge continued (15 November 2026)
+
+In a live **187-cartridge 3D Resource Kit development workflow** using **Bonsai 2 27B**, cartridge **c012** ended without its required DONE status. Magazine recorded **attempt 1 failed**, created a **fresh second attempt**, retained the earlier project work, and accepted the corrected result. The ledger shows **c012 attempt 2 done at 20:03:24**, followed immediately by **c013 running**.
+
+![Real Magazine execution history showing c012 failed then done on its second attempt, and c013 running](docs/images/c012-recovery-ledger-2026-11-15.png)
+
+*Actual ledger evidence, cropped to the relevant rows. Local UI times are shown as recorded.*
+
+The new chat found and corrected invalid Git ignore patterns, checked the result against Git and successfully published its attempt-scoped handover. This is **one observed end-to-end recovery**, not evidence that all 187 cartridges finished or that every failure can be recovered. The recovery model also edited the file despite an instruction to perform verification/publication only; the case study explicitly documents this limitation.
+
+**[Read the recovery chronology, checks and limitations](docs/REAL_WORLD_RECOVERY_2026-11-15.md).**
+
 ## Real-world test: 72-cartridge game build (14 November 2026)
 
 Magazine Simple **0.2.0-exec.5** completed a full **72-cartridge** local-model workflow to build *Nebula Run v3 — Stage 1: Cinder Reach*, a browser-based horizontal shooter. The retained Open WebUI **0.12.5** run records **72/72 cartridges done, with one attempt each**, using **Bonsai 2 27B** and Open Terminal. The recorded run lasted **1 hour 59 minutes 39 seconds** (00:23:49–02:23:28 UTC; approximately two hours). The workflow produced a **7.3 MB game ZIP** with verified Magazine file handovers.

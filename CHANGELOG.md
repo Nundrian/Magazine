@@ -1,5 +1,21 @@
 # Changelog
 
+## Magazine Simple 0.2.0-handover.1 — installed and acceptance-tested, 15 November 2026
+
+**Local Open WebUI 0.12.5 Function update; not a public clean-install release.** This is the current locally installed runner. New runs use attempt-scoped result files and verified commits rather than relying on final chat prose as the outgoing handover. Previously saved runs retain legacy compatibility; no historical run was migrated or resumed.
+
+- Each fresh attempt now has a separate protected identity/descriptor, exact result-file path and standard-library Python publisher.
+- DONE triggers strict result parsing, run/cartridge/attempt/chat identity checks, declared-file and outgoing-selector validation, SHA-256 committed-result checks and read-back before the next cartridge runs.
+- Complete saved Open WebUI chats (including the original assistant message and tool calls/results) are archived and exported with run evidence.
+- Bounded automatic verification/publication retries and eligible staged-output repair retries are supported. Default: two fresh model retries within a **900-second total cartridge budget**, and two transient-storage retries. HALT, Stop, identity/integrity failure, incomplete commit and exhausted budgets are stop conditions. No general replanning, automatic crash resume or model substitution.
+- Live acceptance used **Bonsai 2 27B only**. Four controlled scenarios proved a successful handover despite malformed final chat JSON, fresh-chat result-publication recovery, wrong-chat identity rejection, and fresh-chat staged-file repair. A fifth earlier run repaired its injected problem inside the original chat and is not mislabelled as runner recovery.
+- **193 offline passed, 90 skipped.** Skips were 72 unavailable browser cases, 16 optional screenshots and two missing legacy fixtures. Eleven real saved Bonsai chats and eight committed results were reopened/verified from evidence ZIPs.
+- The original failed 3D Resource Kit run and historical files were preserved. The sidebar launcher and unrelated Functions/Workspace Tools were unchanged.
+
+**Publication scope:** The exact handover.1 Function source and release bundle remain outside this GitHub repository; the existing published `magazine_simple_exec5.py` is historical. The older 72-cartridge game test belongs to exec.5 and the 989 regressions belong to beta.5. See [the handover.1 engineering record](docs/SIMPLE_0.2.0_HANDOVER1.md) and [test chronology](docs/TESTING.md).
+
+---
+
 ## Magazine Simple 0.2.0-exec.5 — installed, source-matched, 13 November 2026
 
 **Local installation and documentation update — not a public runner release.** The newer Open WebUI Simple Function was updated in place, keeping its Function ID and existing run data. This repository now documents its streamlined library, model-assignment, Terminal/tool selection, READY/start separation, ledger, run history and deletion controls.

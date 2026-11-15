@@ -12,7 +12,7 @@
 - **193 offline passed, 90 skipped.** Skips were 72 unavailable browser cases, 16 optional screenshots and two missing legacy fixtures. Eleven real saved Bonsai chats and eight committed results were reopened/verified from evidence ZIPs.
 - The original failed 3D Resource Kit run and historical files were preserved. The sidebar launcher and unrelated Functions/Workspace Tools were unchanged.
 
-**Publication scope:** The exact handover.1 Function source and release bundle remain outside this GitHub repository; the existing published `magazine_simple_exec5.py` is historical. The older 72-cartridge game test belongs to exec.5 and the 989 regressions belong to beta.5. See [the handover.1 engineering record](docs/SIMPLE_0.2.0_HANDOVER1.md) and [test chronology](docs/TESTING.md).
+**Publication scope:** The exact verified [handover.1 Function source](integrations/open_webui/function/magazine_simple_handover1.py) and [standalone publisher helper](integrations/open_webui/function/magazine_publish_helper_handover1.py) are now tracked in this repository. The publisher is already embedded in the Function. The full verification/evidence release bundle remains unpublished; no separately verified public clean-install package is claimed. The existing `magazine_simple_exec5.py` is historical. The older 72-cartridge game test belongs to exec.5 and the 989 regressions belong to beta.5. See [the handover.1 engineering record](docs/SIMPLE_0.2.0_HANDOVER1.md) and [test chronology](docs/TESTING.md).
 
 ---
 

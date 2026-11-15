@@ -16,7 +16,7 @@ The embedded JavaScript is labelled **"No tokens, API calls or workflow actions"
 
 | Integration | Route | Status |
 | --- | --- | --- |
-| **Magazine Simple runner** | `/magazine-simple` | Current local Function is 0.2.0-handover.1; [installation and test record](SIMPLE_0.2.0_HANDOVER1.md). Its new source is not yet published here. |
+| **Magazine Simple runner** | `/magazine-simple` | Current local Function is 0.2.0-handover.1; [source](../integrations/open_webui/function/magazine_simple_handover1.py) and [installation/test record](SIMPLE_0.2.0_HANDOVER1.md) are published. The launcher itself remains separate and unchanged. |
 | **Magazine Simple Sidebar Launcher 0.1.0** | Adds a link to `/magazine-simple` | Supplied source in this repository; separate from the runner |
 | **Older beta.5 Function** | `/magazine` | Public downloadable legacy build, accepted for Open WebUI 0.11.3 |
 | **Older patched-Docker sidebar** | `/magazine` | Historical, independent integration; custom image distribution remains on hold |

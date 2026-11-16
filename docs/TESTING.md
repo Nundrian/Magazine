@@ -1,10 +1,10 @@
-# Magazine beta.5 — Testing summary
+# Magazine — Testing history
 
 **Version:** `0.1.0-beta.5`  
 **Acceptance evidence:** 14 October 2026  
 **Status:** Beta proof of concept; not a production-readiness certification.
 
-Magazine has been tested at several levels. The numbers below are from the beta.5 acceptance record; the live Bonsai tests described separately were performed against the preceding beta.4 baseline.
+Magazine testing has evolved across distinct versions. The current reliability.2 evidence is listed first; later sections retain historical handover.1 and beta.5 testing without transferring their results to newer builds. The beta.5 numbers near the end of this page belong only to beta.5; the separate historical beta.4 live tests are identified as such.
 
 ## Current installed runner: 0.2.0-reliability.2 (16 November 2026)
 

@@ -6,7 +6,11 @@
 
 Magazine has been tested at several levels. The numbers below are from the beta.5 acceptance record; the live Bonsai tests described separately were performed against the preceding beta.4 baseline.
 
-## Current installed runner: 0.2.0-handover.1 (15 November 2026)
+## Current installed runner: 0.2.0-reliability.2 (16 November 2026)
+
+**308 automated tests passed, 19 skipped, zero failed** in the final suite. Live Open WebUI 0.12.5 / Bonsai 2 27B checks validated Antiloop On/Off, persistence, repeated tool-result detection/stop, result publication/recovery and known cumulative usage. The five-attempt limit test combined one real stopped chat and four injected startup failures. The installed Function is byte-identical to [published source](../integrations/open_webui/function/magazine_simple_reliability2.py). No fresh clean-install, full 187-cartridge retest, other-model qualification or destructive power-loss test was reported. [Current detailed record](SIMPLE_0.2.0_RELIABILITY2.md).
+
+## Historical runner: 0.2.0-handover.1 (15 November 2026)
 
 This is **new, separate evidence**, not part of the 989 beta.5 checks below. The existing Open WebUI 0.12.5 Function was updated in place without changing other Functions, Workspace Tools or the sidebar launcher.
 

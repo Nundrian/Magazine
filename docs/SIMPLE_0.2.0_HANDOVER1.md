@@ -1,3 +1,5 @@
+> **Historical record:** Handover.1 was superseded by [reliability.2](SIMPLE_0.2.0_RELIABILITY2.md) on 16 November 2026. The test results and hashes below remain specific to handover.1.
+
 # Magazine Simple 0.2.0-handover.1 — engineering and verification record
 
 **Installed locally:** 15 November 2026 · **Host:** Open WebUI 0.12.5 · **Route:** `/magazine-simple` · **Function:** existing `magazine_simple`, updated in place.

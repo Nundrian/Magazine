@@ -1,8 +1,23 @@
 # Changelog
 
+## Magazine Simple 0.2.0-reliability.2 — local installation accepted, 16 November 2026
+
+**Current installed Open WebUI 0.12.5 Function.** Its exact source and a clean public source ZIP are published. An independently accepted public clean install is not claimed.
+
+- **Recovery:** five total saved attempts, including the initial attempt, with **1,800 seconds per fresh chat**. Older explicit settings stay in force when applicable; Continue cannot exceed five attempts.
+- **Antiloop:** integrated monitoring of structured tool-call results, repeated errors and short cycles. The default is On; an accessible On/Off switch saves per user and Magazine, freezes at Start and remains fixed for recovery. Off does not disable normal timeouts, Stop/HALT or token accounting.
+- **Token accounting:** reports known cumulative usage per attempt, cartridge and run. Missing stopped-chat usage remains incomplete rather than zero or latest-round-only.
+- **Compatibility:** keeps verified result-file handover, SHA-256 commits, saved chat archives and old run records without silently migrating historical work.
+- **Verification:** 308 automated passed, 19 skipped, zero failed in the final suite, with Chromium and Firefox checks. Real Bonsai 2 27B testing on installed Open WebUI 0.12.5 covered Antiloop On/Off, persistence, bounded recovery, normal publication and token usage. Two earlier rejected diagnostic installations were rolled back. The 187-cartridge workload, other models and fresh public installation were **not** retested.
+- **Files:** [verified Function source](integrations/open_webui/function/magazine_simple_reliability2.py) SHA-256 `2112da6c358ebfd2b153e26dea1583cbace98714ff11a21bea31af5b44814377`, and [clean source ZIP](downloads/Magazine-Simple-0.2.0-reliability.2-source.zip) SHA-256 `01f9ef9a8bde75c6b16702a5d440229e6bcab3b1d83dcfa76650ded58abe4404`. The public package excludes private backup, database and chat evidence.
+
+[Current technical/testing record](docs/SIMPLE_0.2.0_RELIABILITY2.md) · [Testing chronology](docs/TESTING.md)
+
+---
+
 ## Magazine Simple 0.2.0-handover.1 — installed and acceptance-tested, 15 November 2026
 
-**Local Open WebUI 0.12.5 Function update; not a public clean-install release.** This is the current locally installed runner. New runs use attempt-scoped result files and verified commits rather than relying on final chat prose as the outgoing handover. Previously saved runs retain legacy compatibility; no historical run was migrated or resumed.
+**Local Open WebUI 0.12.5 Function update; not a public clean-install release.** This was installed before reliability.2. New runs use attempt-scoped result files and verified commits rather than relying on final chat prose as the outgoing handover. Previously saved runs retain legacy compatibility; no historical run was migrated or resumed.
 
 - Each fresh attempt now has a separate protected identity/descriptor, exact result-file path and standard-library Python publisher.
 - DONE triggers strict result parsing, run/cartridge/attempt/chat identity checks, declared-file and outgoing-selector validation, SHA-256 committed-result checks and read-back before the next cartridge runs.

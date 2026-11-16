@@ -1,6 +1,6 @@
 # Magazine Simple 0.2.0-reliability.2
 
-This build extends the verified 0.2.0-reliability.1 runner with Antiloop interface/configuration integration. It is installed in the existing Open WebUI Function; see INSTALLATION-NOTES.md for the actual deployment evidence. Existing workflows, cartridges, creation templates and application code are unchanged.
+This build extends the verified 0.2.0-reliability.1 runner with Antiloop interface/configuration integration. It is installed in the existing Open WebUI Function; see the public installation and test notes at the end of this document. Existing workflows, cartridges, creation templates and application code are unchanged.
 
 ## Configuration
 
@@ -50,7 +50,7 @@ The deterministic c025 regression fixture uses the supplied values 205,867 input
 
 AST comparison in `preserved-mechanisms.json` verifies unchanged publisher source, envelope and outgoing-selector validation, durable commit, committed-result lookup, input preparation, sealing, candidate snapshots and recovery prompt builder. The publication-versus-repair selector and cross-attempt failure fingerprint remain in place. Regression fake clients now cache a generated saved reply, so observational GETs do not execute the scripted model again; stop requests also make their task list empty.
 
-The loop detector is an independently written Python implementation using the installed Open WebUI saved-chat and task APIs. No external extension or chat tool is required. Test and installation evidence is summarised in `INSTALLATION-NOTES.md` in this package; the original maintainer report and private backups are deliberately not distributed.
+The loop detector is an independently written Python implementation using the installed Open WebUI saved-chat and task APIs. No external extension or chat tool is required. Test and installation evidence is summarised in the final section of this document; the original maintainer report and private backups are deliberately not distributed.
 
 ## Antiloop control and persistence
 
@@ -58,7 +58,7 @@ The Antiloop switch is in the existing Tools section and does not enter `tool_id
 
 Preparing a run shows the effective choice. Start captures the latest persisted choice and freezes it for queued execution, recovery and Continue. Historical runs retain their recorded choice (or their copied manifest's setting when absent). Active/queued settings changes are rejected, and the switch is disabled for that work. Off passes no live observation callback to `run_chat`, while final/failure usage capture and all ordinary execution safeguards remain active.
 
-Actual production On/Off, persistence, publication, recovery and accounting checks, including rejected diagnostic trials and verified rollback history, are recorded in INSTALLATION-REPORT.md. The installed Function's source equals the delivered source.
+Actual production On/Off, persistence, publication, recovery and accounting checks, including rejected diagnostic trials and verified rollback history, are summarised in the public installation and test notes below. The installed Function's source equals the delivered source.
 
 
 ---

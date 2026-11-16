@@ -1,5 +1,20 @@
 # Changelog
 
+## Magazine Simple 0.2.0-reliability.3 — verified local update, 16 November 2026
+
+**Current installed Open WebUI 0.12.5 Function.** The versioned source exactly matches the maintainer's installed source; not an independent public clean-install certification.
+
+- **Retry admission corrected:** repeated `CHAT_FAILED`, `DONE_MISSING`, missing outputs, and recoverable publication/handover omissions no longer get a blanket no-progress veto merely because their fingerprints match. Up to **five total attempts**, with explicit smaller workflow limits respected and no sixth attempt.
+- **Safety preserved:** genuine repeated loops/no-progress failures, HALT, operator Stop, cancellation, identity/integrity faults, permanent storage errors and unconfirmed task stops still block automatic retries.
+- **Visible usage:** Reported tokens outside the collapsed ledger; structured per-attempt retry/stop decisions, and attempt/cartridge/run token subtotals with unavailable and incomplete usage indicated.
+- **Preserved:** 1,800 seconds per fresh chat, Antiloop settings/detection, publisher, committed handover, checkpoints, historical ledgers and other Function settings.
+- **Verification:** 23 focused passes; full suite **328 passed, 0 failed, 19 skipped**. Chromium and Firefox checked. Real Bonsai 2 27B installed-function smoke and missing-result recovery passed. The five-failure integration used one real model response and four deliberate post-chat-creation failures, **not** five full model completions. The 187-cartridge run was not resumed or retested.
+- **Files:** [exact Function source](integrations/open_webui/function/magazine_simple_reliability3.py) SHA-256 `28a9f3172192efbd7219a017bdfe7e2d5737882d9b0e3684478bdfc367ec730b`; [public source-only ZIP](downloads/Magazine-Simple-0.2.0-reliability.3-source.zip) SHA-256 `f77aa71637adb29f44983e5600aa168f09011001e868be90d001fb890ec9ca65`. The private evidence exports, local database and backups are not published.
+
+[Engineering/audit summary](docs/SIMPLE_0.2.0_RELIABILITY3.md) · [Testing chronology](docs/TESTING.md)
+
+---
+
 ## Magazine Simple 0.2.0-reliability.2 — local installation accepted, 16 November 2026
 
 **Current installed Open WebUI 0.12.5 Function.** Its exact source and a clean public source ZIP are published. An independently accepted public clean install is not claimed.

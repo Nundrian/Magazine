@@ -1,3 +1,4 @@
 fcc391e7672feb5fd78cd8c8db2447fe4c2fb58a10ca7fe5be66415d0b04fdb6  Magazine-0.1.0-beta.5-FunctionOnly.zip
 bd9fd9df5eb71d970eb230bd9744385d6e26cb60d540d462ba7df11c5723a2b9  Magazine-0.1.0-beta.5.zip
 01f9ef9a8bde75c6b16702a5d440229e6bcab3b1d83dcfa76650ded58abe4404  Magazine-Simple-0.2.0-reliability.2-source.zip
+f77aa71637adb29f44983e5600aa168f09011001e868be90d001fb890ec9ca65  Magazine-Simple-0.2.0-reliability.3-source.zip

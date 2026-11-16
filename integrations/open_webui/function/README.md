@@ -1,4 +1,4 @@
-> **Historical integration:** The `magazine_ef.py` / beta.5 Function documented below targets Open WebUI 0.11.3. The current Open WebUI 0.12.5 implementation is [Magazine Simple 0.2.0-reliability.2](magazine_simple_reliability2.py), with [current engineering notes](../../../docs/SIMPLE_0.2.0_RELIABILITY2.md).
+> **Historical integration:** The `magazine_ef.py` / beta.5 Function documented below targets Open WebUI 0.11.3. The current Open WebUI 0.12.5 implementation is [Magazine Simple 0.2.0-reliability.3](magazine_simple_reliability3.py), with [current engineering notes](../../../docs/SIMPLE_0.2.0_RELIABILITY3.md).
 
 # Magazine Event Function
 

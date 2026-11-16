@@ -4,9 +4,13 @@
 **Acceptance evidence:** 14 October 2026  
 **Status:** Beta proof of concept; not a production-readiness certification.
 
-Magazine testing has evolved across distinct versions. The current reliability.2 evidence is listed first; later sections retain historical handover.1 and beta.5 testing without transferring their results to newer builds. The beta.5 numbers near the end of this page belong only to beta.5; the separate historical beta.4 live tests are identified as such.
+Magazine testing has evolved across distinct versions. The current reliability.3 evidence is listed first; later sections retain historical handover.1 and beta.5 testing without transferring their results to newer builds. The beta.5 numbers near the end of this page belong only to beta.5; the separate historical beta.4 live tests are identified as such.
 
-## Current installed runner: 0.2.0-reliability.2 (16 November 2026)
+## Current installed runner: 0.2.0-reliability.3 (16 November 2026)
+
+**328 automated passed, 0 failed, 19 skipped**; 23 focused regressions passed. Chromium and Firefox were exercised. Real Bonsai 2 27B integration included a successful source-installed Function smoke, missing-result recovery and five identical failure fingerprints without a sixth attempt. In the latter case one inference response was real, with four deterministic post-chat-creation failures; the five cases were not all full model completions. The report independently verified saved ZIP evidence and on-screen token values, but the evidence bundle is not published. No clean-install qualification or 187-cartridge rerun. [Current detailed record](SIMPLE_0.2.0_RELIABILITY3.md).
+
+## Earlier runner: 0.2.0-reliability.2 (16 November 2026)
 
 **308 automated tests passed, 19 skipped, zero failed** in the final suite. Live Open WebUI 0.12.5 / Bonsai 2 27B checks validated Antiloop On/Off, persistence, repeated tool-result detection/stop, result publication/recovery and known cumulative usage. The five-attempt limit test combined one real stopped chat and four injected startup failures. The installed Function is byte-identical to [published source](../integrations/open_webui/function/magazine_simple_reliability2.py). No fresh clean-install, full 187-cartridge retest, other-model qualification or destructive power-loss test was reported. [Current detailed record](SIMPLE_0.2.0_RELIABILITY2.md).
 

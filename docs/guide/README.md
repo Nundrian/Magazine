@@ -1,4 +1,6 @@
-# Magazine Simple illustrated interface
+# Magazine Simple illustrated interface (historical 13 November 2026)
+
+**For the current 0.3.0-scheduler.rc1 release, see the [new interface walkthrough](../USING_MAGAZINE.md) with actual 18 November screenshots and the [technical guide](../TECHNICAL_0.3.0_SCHEDULER_RC1.md).** The material below is an older interactive illustration and must not be mistaken for a screenshot of the current Function.
 
 This folder contains a **static HTML, CSS and JavaScript documentation page** for the **locally installed Magazine Simple 0.2.0-exec.5** interface, using the 13 November 2026 reference screenshots.
 

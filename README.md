@@ -1,153 +1,63 @@
-# Magazine
+# Magazine Simple
 
-**A simple workflow runner for local AI models.**
+**Make bigger projects manageable for your local AI.**
 
-Magazine helps smaller language models tackle larger projects by breaking the work into **prewritten, manageable tasks** called *cartridges*. Each cartridge gets a fresh Open WebUI chat with its assigned model. Magazine executes them in order, preserves the work and passes along declared files or values when the next step needs them.
+Magazine is a workflow runner for [Open WebUI](https://github.com/open-webui/open-webui). It splits a project into smaller jobs called **cartridges**. Each cartridge runs in a fresh chat with the model you choose. Magazine keeps the order, saves the work, and passes verified results to the next job.
 
-The idea is straightforward: let the model concentrate on **one job at a time**, while Magazine handles the sequence. Magazine does not plan the project or judge whether a model's work is correct. The current runner can make **bounded, targeted recovery attempts** when publication or eligible output-file steps fail; those retries do not guarantee a correct result.
+You plan the jobs; Magazine runs them. It does not invent a plan or guarantee the AI's work is correct.
 
-**Current locally installed version:** **Magazine Simple 0.2.0-reliability.3** on **Open WebUI 0.12.5** (16 November 2026). **Sidebar Launcher:** **0.1.0**, unchanged. [**Latest source ZIP**](downloads/Magazine-Simple-0.2.0-reliability.3-source.zip) · [**Exact installed Function source**](integrations/open_webui/function/magazine_simple_reliability3.py). Local Bonsai tests passed; independent public clean-install acceptance has not been performed.
+**Latest installed and source-verified version:** **0.3.0-scheduler.rc1** (18 November 2026), tested with **Open WebUI 0.12.5**. This is a **release candidate**, not a general production certification.
 
-## This is what Magazine looks like
+[**Download latest source ZIP**](downloads/Magazine-Simple-0.3.0-scheduler.rc1-source.zip) · [**Exact Function source**](integrations/open_webui/function/magazine_simple_scheduler_rc1.py) · [**How to use Magazine**](docs/USING_MAGAZINE.md) · [**Technical details**](docs/TECHNICAL_0.3.0_SCHEDULER_RC1.md) · [**Changelog**](CHANGELOG.md)
 
-![Faithful recreation of the current Magazine Simple Your workflows screen, showing the actual workflow dropdown, load button, collapsible delete/import controls and annotated arrows](docs/images/magazine-simple-ui-01-workflows.svg)
+## The interface
 
-*Recreated directly from the supplied 13 November 2026 interface references, using the real layout and control names. The sample workflow and run details are illustrative; this is not a live screenshot.*
+![Annotated continuous walkthrough of Magazine's dashboard, workflow selection, model setup, tools, running view, ledger and previous results](docs/images/magazine-simple-0.3.0-walkthrough.webp)
 
-**[Explore the complete visual walkthrough](docs/guide/index.html)** — with interactive model-selection examples and explanations of the controls.
+*Built from the owner's actual 18 November 2026 screenshots, with arrows and short explanations. Different expanded/collapsed states are arranged vertically to make one readable walkthrough; it is **not** an unedited single browser capture.*
 
-### Set up: choose models, Terminal and tools
+## What's new in 0.3.0
 
-![Magazine Simple setup panel, showing model-selection dropdowns for each cartridge, checkbox bulk assignment, model information, Terminal and tool selection](docs/images/magazine-simple-ui-02-setup.svg)
+- **More than one project:** the dashboard shows each project's status, current cartridge, model, token reporting and position in the queue.
+- **Two scheduling choices:** **Sequential** finishes one project before starting the next. **Round Robin** gives projects turns, switching after each completed and verified cartridge. Only **one cartridge runs at a time**.
+- **Better return to previous work:** reopening the page restores saved run details instead of looking like an empty, new session. Interrupted work is retained, but it does **not restart itself**.
+- **Clearer ledger:** six overview columns, expandable attempt details, status filters, reported tokens and duration.
+- **Safer stopping and recovery:** a stopped project stays stopped, earlier verified work is preserved and failures are recorded without silently replaying completed cartridges.
 
-Expand **Workflow steps** to inspect the cartridges. Choose **one model for all steps** or **a model for each step**, with bulk selection when needed. The **Model information** section is only a reference list. Select a Terminal if the workflow needs one, and tick only the tools required; tools start unticked.
+The existing **Antiloop** protection, **five-attempt maximum**, **1,800 seconds per fresh chat**, checked file handovers and results ZIP remain part of Magazine. The new scheduler has passed isolated tests; several live multi-project and service-restart scenarios still need real-world acceptance.
 
-### Run: prepare first, start separately
+[See exactly what changed and what was tested](docs/TECHNICAL_0.3.0_SCHEDULER_RC1.md).
 
-![Magazine Simple Run workflow panel, showing READY status, ordered cartridges, Start, Stop and Check progress and the expandable Ledger](docs/images/magazine-simple-ui-03-run.svg)
+## Get started
 
-**Prepare workflow** creates a READY run; it does not start any model. **Start workflow** begins execution, **Check progress** refreshes the status and **Ledger** expands the per-step record. **Stop** is not a pause button. If a run fails or stops, the operator can choose **Continue from this step** when earlier cartridges have completed.
+1. **Import a workflow ZIP** using **Add a workflow**. This ZIP contains the job instructions, not the Magazine software.
+2. **Load the workflow** and choose a model for every cartridge (or one model for all).
+3. **Choose a Terminal and any tools** that the work actually needs. Tools are unticked by default.
+4. Select **Prepare workflow** to create a ready-to-run job. This **does not start** your AI.
+5. Select **Start workflow**. Watch progress in the dashboard and ledger, then download the results ZIP.
 
-### Results and previous work
+If a run stops, inspect the recorded reason. You can continue from an eligible cartridge without deleting earlier results. This is not a guarantee that unfinished code is correct.
 
-![Magazine Simple previous work panel with history dropdown, expandable Delete previous work controls and Download results ZIP button](docs/images/magazine-simple-ui-04-history.svg)
+[Step-by-step guide](docs/USING_MAGAZINE.md)
 
-You can inspect earlier runs, keep their evidence and export a ZIP. **Delete workflows** removes imported definitions but keeps past runs; **Delete previous work** removes the selected saved run data, while leaving its Open WebUI chats intact. The live delete operation was **not** part of the exec.5 acceptance test.
+## Install or update Magazine Simple
 
-## How the workflow works
+The repository includes the exact source of the version installed on Open WebUI 0.12.5:
 
-```mermaid
-flowchart LR
-    A["Write or import<br/>workflow ZIP"] --> B["Choose models<br/>and tools"]
-    B --> C["Prepare<br/>READY"]
-    C -->|Start| D["Cartridge 1<br/>fresh chat"]
-    D -->|Save and hand over<br/>declared files/values| E["Cartridge 2<br/>fresh chat"]
-    E --> F["Further cartridges<br/>in order"]
-    F --> G["Ledger, results<br/>and export ZIP"]
-```
+**[Download source ZIP](downloads/Magazine-Simple-0.3.0-scheduler.rc1-source.zip)** or read [the versioned Function source](integrations/open_webui/function/magazine_simple_scheduler_rc1.py).
 
-A workflow can contain as many cartridges as its author designs, subject to practical limits. Cartridges can use the same model or different models. In newly prepared runs, file-based results are checked and committed before downstream cartridges begin; original Open WebUI chats remain available for inspection. **Finished** means execution completed and the results were stored, **not** that every answer was correct.
+Make a backup and ensure the scheduler has no active or queued work before updating. In **Open WebUI → Admin Panel → Functions**, edit the existing **Magazine Simple** Function and replace its source, keeping its Function identity and settings. Save, then open **`/magazine-simple`**.
 
-## Latest: corrected five-attempt recovery and visible token usage
+**Do not** upload the Function source or a source-release ZIP using **Add a workflow**: that control is for cartridge workflows only. The **Sidebar Launcher 0.1.0** is separate and unchanged.
 
-**0.2.0-reliability.3** corrects a premature retry stop when unfinished replies or missing results repeat with identical fingerprints. Eligible failures can now use the remaining allowance, **up to five total saved attempts**. Confirmed loops, HALT, Stop and genuine integrity or safety blockers still stop earlier. Per-attempt retry/stop reasons appear in the ledger; a **Reported tokens** summary is visible directly on the run page, with incomplete or unavailable usage clearly labelled. [Read the reliability.3 audit and tests](docs/SIMPLE_0.2.0_RELIABILITY3.md).
+For requirements, a source checksum, recovery behaviour, security notes and testing limitations, see the [technical guide](docs/TECHNICAL_0.3.0_SCHEDULER_RC1.md).
 
-The earlier **0.2.0-reliability.2** introduced the existing safeguards and configuration that reliability.3 preserves. It keeps the validated handover mechanism introduced in handover.1 and adds:
+## What Magazine can — and cannot — promise
 
-- **Five attempts maximum:** one initial attempt plus up to four recovery attempts. Each fresh work, publication or repair chat receives its own **1,800-second** default allowance, rather than sharing a total cartridge budget. Continue cannot exceed five saved attempts. Older explicit limits remain respected.
-- **Built-in Antiloop:** monitors completed, structured tool calls and results while the model is active, warning after three identical repetitions and triggering a confirmed stop after five (or three identical errors). The bounded recovery mechanism receives the evidence. Changing results and silent reasoning are not mistaken for confirmed loops; detection is necessarily incomplete.
-- **Antiloop On/Off:** in **Set up → Tools for this workflow**, on by default, saved per signed-in user and workflow and frozen for each started run (including queued work and recovery). An explicit manifest Off remains Off unless the user saves an override. Off does not disable normal timeouts, five-attempt admission, Stop/HALT, handover validation or token accounting.
-- **Cumulative token usage:** reported input, output and total consumption are retained for every attempt, cartridge and run in the ledger, run JSON and results ZIP. When a stopped chat supplies no usage, its consumption remains **unavailable/incomplete**, not estimated from its final round.
-- **Integrity before next cartridge:** Magazine requires DONE, checks declared files and outgoing selectors, validates the result's run/cartridge/attempt/chat identity, archives the saved chat, commits the verified result with SHA-256 and reads it back. The publisher helper is already embedded in the Function; it is **not** a separate Open WebUI tool.
+Magazine can run and record a planned sequence, check declared handover files, retain evidence, make limited recovery attempts and prevent several known failure modes. It **cannot** guarantee that a model wrote correct code, that a service will survive every outage, or that two models can safely edit the same project folder at once. Review workflows before giving them a Terminal or powerful tools.
 
-Historical runs keep their saved modes and are not silently converted or restarted. Verified result structure does not prove semantic correctness.
+Older Function versions, experiments and evidence remain in the repository for reference. For an earlier visual demonstration, see the [historical November interface guide](docs/guide/index.html), which is not a screenshot of the latest release.
 
-[Current reliability.3 record](docs/SIMPLE_0.2.0_RELIABILITY3.md) · [Latest source ZIP](downloads/Magazine-Simple-0.2.0-reliability.3-source.zip) · [Earlier reliability.2 details](docs/SIMPLE_0.2.0_RELIABILITY2.md)
+## Licence
 
-## Real-world recovery: a failed cartridge continued (15 November 2026)
-
-In a live **187-cartridge 3D Resource Kit development workflow** using **Bonsai 2 27B**, cartridge **c012** ended without its required DONE status. Magazine recorded **attempt 1 failed**, created a **fresh second attempt**, retained the earlier project work, and accepted the corrected result. The ledger shows **c012 attempt 2 done at 20:03:24**, followed immediately by **c013 running**.
-
-![Real Magazine execution history showing c012 failed then done on its second attempt, and c013 running](docs/images/c012-recovery-ledger-2026-11-15.png)
-
-*Actual ledger evidence, cropped to the relevant rows. Local UI times are shown as recorded.*
-
-The new chat found and corrected invalid Git ignore patterns, checked the result against Git and successfully published its attempt-scoped handover. This is **one observed end-to-end recovery**, not evidence that all 187 cartridges finished or that every failure can be recovered. The recovery model also edited the file despite an instruction to perform verification/publication only; the case study explicitly documents this limitation.
-
-**[Read the recovery chronology, checks and limitations](docs/REAL_WORLD_RECOVERY_2026-11-15.md).**
-
-## Real-world test: 72-cartridge game build (14 November 2026)
-
-Magazine Simple **0.2.0-exec.5** completed a full **72-cartridge** local-model workflow to build *Nebula Run v3 — Stage 1: Cinder Reach*, a browser-based horizontal shooter. The retained Open WebUI **0.12.5** run records **72/72 cartridges done, with one attempt each**, using **Bonsai 2 27B** and Open Terminal. The recorded run lasted **1 hour 59 minutes 39 seconds** (00:23:49–02:23:28 UTC; approximately two hours). The workflow produced a **7.3 MB game ZIP** with verified Magazine file handovers.
-
-The generated game's test suite reported **64 passes, 0 failures**; a software-canvas visual gate passed; and a simulated playthrough reached stage clear. The operator subsequently **confirmed the game ran in Firefox**. The runner itself recorded the browser check as **NOT TESTED**, so this is a user-confirmed desktop execution, not an automated Firefox compatibility or playability certification.
-
-This demonstrates substantial real-world multi-cartridge execution and a runnable game deliverable, **not** perfect game quality or guaranteed success on other projects. The final audit also retained **one expected-file hash mismatch** in an enemy-art script despite passing tests.
-
-**[Read the full evidence, run configuration and limitations](docs/REAL_WORLD_GAME_RUN_2026-11-14.md).** This run used **exec.5**, not the later handover.1 version. It remains valuable historical evidence, not a handover.1 acceptance run.
-
-## Versions, source and release boundaries
-
-| Component | Version | Availability |
-| --- | --- | --- |
-| **Magazine Simple — current local installation** | **0.2.0-reliability.3** | [**Exact Function source**](integrations/open_webui/function/magazine_simple_reliability3.py) and [**source ZIP**](downloads/Magazine-Simple-0.2.0-reliability.3-source.zip). Installed and live-tested on Open WebUI 0.12.5 at `/magazine-simple`. No independent public clean-install acceptance. |
-| Earlier Magazine Simple — historical | 0.2.0-reliability.2 | [Source](integrations/open_webui/function/magazine_simple_reliability2.py) and [engineering record](docs/SIMPLE_0.2.0_RELIABILITY2.md). |
-| Earlier Magazine Simple — historical | 0.2.0-handover.1 | [Source](integrations/open_webui/function/magazine_simple_handover1.py), [publisher helper](integrations/open_webui/function/magazine_publish_helper_handover1.py) and [engineering record](docs/SIMPLE_0.2.0_HANDOVER1.md). |
-| Earlier Magazine Simple — historical | 0.2.0-exec.5 | [Source](integrations/open_webui/function/magazine_simple_exec5.py) and [notes](docs/SIMPLE_0.2.0_EXEC5.md). |
-| Sidebar Launcher | 0.1.0 | [Separate source](integrations/open_webui/function/magazine_simple_sidebar_launcher.py); opens the page but does not execute cartridges. |
-| Original Magazine Function | 0.1.0-beta.5 | [Historical Function-only ZIP](downloads/Magazine-0.1.0-beta.5-FunctionOnly.zip), accepted for Open WebUI 0.11.3 at `/magazine`. **Not** a Magazine Simple installer. |
-
-The older patched-Docker sidebar integration remains [historical source](integrations/open_webui/frontend/README.md). The [visual guide](docs/guide/index.html) recreates the **13 November exec.5 interface**, before Antiloop was added, and is not a live screenshot of reliability.3. The latest source-only ZIP contains the exact self-contained Python Function and a short README, **not** the private test suite/evidence, database backups, logs or chat histories. The earlier reliability.2 package remains available for historical review. Install by updating the existing Open WebUI Function; **do not import this ZIP as a cartridge workflow**.
-
-### Testing, correctly attributed
-
-**16 November — reliability.3:** **328 automated passed, 19 skipped, zero failed** (23 focused regressions passed). Chromium, Firefox and controlled live Bonsai 2 27B integration checks covered repeated unfinished-chat retry admission, recovery of a missing published handover, normal commit and visible token usage. The five-failure case used four injected failures after creating chats; it does not demonstrate five full inference completions. The 187-cartridge workload and independent clean installation were **not** retested. [Reliability.3 evidence summary](docs/SIMPLE_0.2.0_RELIABILITY3.md).
-
-**16 November — reliability.2:** **308 automated passed, 19 skipped, zero failed**. Browser checks ran in Chromium and Firefox. Live **Bonsai 2 27B** tests on Open WebUI 0.12.5 exercised Antiloop On/Off, persisted settings, repeated-tool detection/recovery, normal verified publication and cumulative usage. The five-attempt check used one real stopped chat followed by four controlled startup failures. Two earlier diagnostic trials were rolled back before the accepted installation. **Not tested:** the full 187-cartridge workload, other models, public clean installation or destructive power-loss recovery. [Detailed scope](docs/SIMPLE_0.2.0_RELIABILITY2.md).
-
-**15 November — handover.1:** **193 passed / 90 skipped** in isolated offline testing. The skips include unavailable Chromium and Firefox executables (72 cases), optional screenshots (16) and unavailable legacy fixtures (2). Real Open WebUI/Bonsai testing covered successful malformed-chat-text handover, missing-result recovery, rejection of wrong-chat identity, and fresh-chat repair of a removed required output. **11 actual Bonsai chats** and **eight committed results** were verified from downloaded evidence ZIPs. One additional repair trial completed but was repaired within the original chat; it does not count as proof of runner-level fresh-chat repair. **No other production model was tested on handover.1.**
-
-**13–14 November — exec.5:** A live three-step Qwen3 Coder acceptance workflow completed with Terminal calls and verified file handover; a separate Bonsai 72-cartridge game-building workflow completed. These test the **older** version and are retained rather than reattributed.
-
-**October — beta.5:** **989 automated regressions** across the previous implementation. These are historical, **not** handover.1 test results.
-
-The handover.1 installation report also records that the existing Function was updated in place, other Functions and Workspace Tools remained unchanged, and historical project files were preserved. Crash boundaries were simulated offline; production service restart/power-loss durability was not tested. A committed result verifies integrity and structure, **not semantic correctness**.
-
-[New technical record](docs/SIMPLE_0.2.0_HANDOVER1.md) · [Testing chronology](docs/TESTING.md) · [Changelog](CHANGELOG.md)
-
-<details>
-<summary><strong>For coders and engineers — current implementation</strong></summary>
-
-Magazine Simple is an Open WebUI Event Function exposing `/magazine-simple` and authenticated `/api/magazine-simple` routes. Cartridges run sequentially with one fresh saved chat per attempt. Its per-process queue is not a multi-process distributed lock or crash-persistent scheduler.
-
-New runs use `handover_mode: result_file_v1`. An attempt-scoped Python publisher writes the result; Magazine checks DONE, file declarations, output selectors, identity and chat evidence, then commits with SHA-256 and read-back. Existing saved runs retain their original protocol.
-
-```yaml
-# Optional magazine.yaml configuration for newly prepared runs
-handover_mode: result_file_v1
-result_profile: generic
-recovery:
-  max_attempts: 5
-  attempt_seconds: 1800
-  io_retries: 2
-loop_police:
-  enabled: true
-  warn_repeats: 3
-  stop_repeats: 5
-  error_repeats: 3
-  cycle_repeats: 3
-  history_size: 64
-```
-
-Historical `seconds` and `max_retries` aliases are supported with bounded semantics. The saved Antiloop user setting overrides the manifest switch and freezes at Start. DONE remains required in file protocol mode even if the legacy `require_done_line` valve is disabled. Scoped recovery cannot guarantee that a model will obey restrictions on editing files.
-
-**Source identity:** Installed Function SHA-256 `28a9f3172192efbd7219a017bdfe7e2d5737882d9b0e3684478bdfc367ec730b`; the [current published source](integrations/open_webui/function/magazine_simple_reliability3.py) matches byte for byte. Source-only ZIP SHA-256 `f77aa71637adb29f44983e5600aa168f09011001e868be90d001fb890ec9ca65`. Historical reliability.2, handover.1 and exec.5 source remains available.
-
-[Current engineering and test record](docs/SIMPLE_0.2.0_RELIABILITY3.md) · [Previous handover.1 details](docs/SIMPLE_0.2.0_HANDOVER1.md)
-</details>
-
-## Licence and safety
-
-Magazine is published under the [MIT licence](LICENSE). Open WebUI and other software retain their own licences. Review workflows and selected tools before running them. For reliability.3, the supplied installation report records source identity, automated checks and selected live Bonsai recovery tests; separate reliability.2 trials cover the unchanged Antiloop On/Off behaviour. This is not a clean-install, general security or production-readiness certification.
-
-[Historical beta.5 security notes](docs/SECURITY.md) · [Sidebar Launcher details](docs/SIDEBAR_LAUNCHER.md) · [Illustrated guide](docs/guide/index.html)
+Magazine is released under the [MIT licence](LICENSE). Open WebUI, models and connected tools have their own licences.

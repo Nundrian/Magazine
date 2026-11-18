@@ -1,4 +1,4 @@
-> **Historical integration:** The `magazine_ef.py` / beta.5 Function documented below targets Open WebUI 0.11.3. The current Open WebUI 0.12.5 implementation is [Magazine Simple 0.2.0-reliability.3](magazine_simple_reliability3.py), with [current engineering notes](../../../docs/SIMPLE_0.2.0_RELIABILITY3.md).
+> **Latest Magazine Simple:** [0.3.0-scheduler.rc1](magazine_simple_scheduler_rc1.py) for Open WebUI 0.12.5, with [plain-English setup](../../../docs/USING_MAGAZINE.md) and [technical details](../../../docs/TECHNICAL_0.3.0_SCHEDULER_RC1.md). The beta.5 Function described below remains historical and targets Open WebUI 0.11.3.
 
 # Magazine Event Function
 

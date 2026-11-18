@@ -1,5 +1,20 @@
 # Changelog
 
+## Magazine Simple 0.3.0-scheduler.rc1 — locally installed, 18 November 2026
+
+**Latest release candidate for Open WebUI 0.12.5.** The supplied exact Function source matches the installed source SHA-256 `acb55b3421bf5ea23510dd1b3f3372d1f19183a7bd6dec8da9940c89bea3ceb3`. The installed Function and original user data were preserved; installation did not restart the previous failed 52/191-cartridge run.
+
+- **Project scheduler:** Sequential (default) or Round Robin. Round Robin rotates projects after a verified cartridge while still allowing **one cartridge at a time**. Active attempts/recovery are not interrupted by a mode change.
+- **Persistent queue/checkpoints:** the journal keeps ordering and recovery points across process restart; it excludes credentials and does **not** automatically dispatch work after a restart.
+- **Dashboard:** a unified multiple-project view, current status, next queued work, selected project details and restoration after page refresh.
+- **Ledger:** six overview columns, expandable attempt details, filters, reported input/output/total tokens and duration with missing data clearly labelled.
+- **Preserved safeguards:** existing bounded recovery, Antiloop, STOP/HALT behaviour, committed SHA-256 file handovers, exports and older runs.
+- **Verification:** existing core suite 611 passed; frozen baseline 249 passed, 2 skipped (plus 2 browser cases deselected); full candidate 280 passed and **98 skipped**; 48 separate Windows Firefox/Chromium page cases passed; two candidate API/engine/browser integrations passed using mocked model/auth services. Read-only checks on the **installed** Firefox and Chromium browser views passed. Real concurrent-project model execution, deliberate installed-service restart and some historical Linux browser checks remain unverified. Isolated automated tests are not a live multi-model endorsement.
+
+**Public files:** [exact Function source](integrations/open_webui/function/magazine_simple_scheduler_rc1.py), [source-only ZIP](downloads/Magazine-Simple-0.3.0-scheduler.rc1-source.zip), [technical record](docs/TECHNICAL_0.3.0_SCHEDULER_RC1.md), [illustrated guide](docs/USING_MAGAZINE.md). The source ZIP (SHA-256 `495bfd266dc07d1c6ecc89c9c4d9e36fcb242c78c2b01993e64d6294b9b4290e`) is a distribution wrapper containing the exact source and installation notes, not the private regression candidate, account backup or a cartridge workflow.
+
+---
+
 ## Magazine Simple 0.2.0-reliability.3 — verified local update, 16 November 2026
 
 **Current installed Open WebUI 0.12.5 Function.** The versioned source exactly matches the maintainer's installed source; not an independent public clean-install certification.

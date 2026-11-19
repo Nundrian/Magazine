@@ -2912,6 +2912,9 @@ PAGE_HTML = r"""<!doctype html>
   function aiModelBrief(w,models){
     return "Select exact available model IDs for Magazine cartridges based on task fit and evidence. "
       +"Never invent model IDs, local benchmarks, change prompts, tool permissions, dependencies or recovery. "
+      +"Qwen3-Coder-30B-A3B is a non-thinking coding specialist, not a reasoning model; do not assign it "
+      +"complex planning or independent audits merely because it codes well. Historical local tests showed "
+      +"intermittent tool-call omissions; consider observed reliability separately from advertised tool support. "
       +'Return ONLY JSON with schema_version "1.0", workflow_name, cartridge_ids in order, '
       +"and cartridge_models mapping EVERY cartridge ID to an available model ID. Optional default_model permitted. "
       +"This is a recommendation, not permission to run.\n\n"

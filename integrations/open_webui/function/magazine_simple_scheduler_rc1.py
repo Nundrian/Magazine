@@ -492,10 +492,21 @@ def workflow_summary(library, workflow_id):
     for c in wf["cartridges"]:
         if c["model"] not in models:
             models.append(c["model"])
-    return {"id": workflow_id, "name": wf["name"], "model_keys": models, "loop_police": wf["loop_police"],
+    summary = {"id": workflow_id, "name": wf["name"], "model_keys": models, "loop_police": wf["loop_police"],
             "cartridges": [{"id": c["id"], "model": c["model"], "prompt_file": c["prompt_file"],
                             "prompt": c["prompt"][:4000], "inputs": c["inputs"], "outputs": c["outputs"],
                             "handover": c["handover"]} for c in wf["cartridges"]]}
+    # Suggested models are inert preview data. Never auto-apply.
+    sidecar = root / "model-assignments.json"
+    if sidecar.exists():
+        if sidecar.is_symlink() or not sidecar.is_file() or sidecar.stat().st_size > 256 * 1024:
+            summary["model_plan_error"] = "Model plan must be a regular file of at most 256 KiB"
+        else:
+            try:
+                summary["model_plan"] = json.loads(sidecar.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, ValueError):
+                summary["model_plan_error"] = "Model plan is not valid UTF-8 JSON"
+    return summary
 
 
 def delete_workflow(library, workflow_id):
@@ -2618,6 +2629,14 @@ PAGE_HTML = r"""<!doctype html>
       <label for="model-all">AI model for all steps</label>
       <select id="model-all"></select>
     </div>
+    <details id="ai-model-plan"><summary>GPT / Claude model assignments (optional)</summary>
+      <p class="muted">Copy a task-and-model brief for GPT or Claude, or include model-assignments.json in the workflow ZIP. Check private content before sharing. No inference runs in Magazine.</p>
+      <button id="btn-ai-copy" type="button">Copy planning brief</button>
+      <div class="field-group"><label for="ai-model-json">Model assignment JSON</label>
+      <textarea id="ai-model-json" spellcheck="false" rows="7" placeholder="Paste model-assignments.json from GPT or Claude"></textarea></div>
+      <button id="btn-ai-apply" type="button">Validate and apply suggested models</button>
+      <p id="ai-model-status" class="msg muted" role="status">Suggestions require your approval.</p>
+    </details>
     <div id="bulk-control" class="bulk hidden" role="group" aria-label="Choose one model for several steps">
       <div class="field-actions">
         <button id="btn-bulk-select-all">Select all</button>
@@ -2866,6 +2885,63 @@ PAGE_HTML = r"""<!doctype html>
   };
 
   // --- set up ---
+  // Host catalogue and workflow identity are authoritative, not AI prose.
+  function validateAiModelPlan(plan,workflow,availableModels){
+    if(!plan||Array.isArray(plan)||typeof plan!=="object")throw Error("Model plan must be a JSON object");
+    if(plan.schema_version!=="1.0")throw Error('Model plan schema_version must be "1.0"');
+    if(plan.workflow_name!==workflow.name)throw Error("Model plan belongs to another workflow");
+    var ids=workflow.cartridges.map(function(c){return c.id;});
+    if(!Array.isArray(plan.cartridge_ids)||plan.cartridge_ids.length!==ids.length||
+       ids.some(function(id,i){return id!==plan.cartridge_ids[i];}))throw Error("Model plan cartridge order/IDs do not match");
+    if(!plan.cartridge_models||Array.isArray(plan.cartridge_models)||typeof plan.cartridge_models!=="object")
+      throw Error("cartridge_models must be an object");
+    var known=new Set(ids), available=new Set(availableModels.map(function(m){return typeof m==="string"?m:m.id;}));
+    for(var key of Object.keys(plan.cartridge_models))if(!known.has(key))throw Error("Unknown cartridge: "+key);
+    var fallback=plan.default_model;
+    if(fallback!==undefined&&(typeof fallback!=="string"||!fallback.trim()||!available.has(fallback)))
+      throw Error("Unavailable default model: "+fallback);
+    var out=Object.create(null);
+    for(var id of ids){
+      var value=Object.prototype.hasOwnProperty.call(plan.cartridge_models,id)?plan.cartridge_models[id]:fallback;
+      if(typeof value!=="string"||!value.trim())throw Error("Missing model for "+id);
+      if(!available.has(value))throw Error("Unavailable model for "+id+": "+value);
+      out[id]=value;
+    }
+    return out;
+  }
+  function aiModelBrief(w,models){
+    return "Select exact available model IDs for Magazine cartridges based on task fit and evidence. "
+      +"Never invent model IDs, local benchmarks, change prompts, tool permissions, dependencies or recovery. "
+      +"Qwen3-Coder-30B-A3B is a non-thinking coding specialist, not a reasoning model; do not assign it "
+      +"complex planning or independent audits merely because it codes well. Historical local tests showed "
+      +"intermittent tool-call omissions; consider observed reliability separately from advertised tool support. "
+      +'Return ONLY JSON with schema_version "1.0", workflow_name, cartridge_ids in order, '
+      +"and cartridge_models mapping EVERY cartridge ID to an available model ID. Optional default_model permitted. "
+      +"This is a recommendation, not permission to run.\n\n"
+      +JSON.stringify({host:"Open WebUI",workflow_name:w.name,
+        available_models:models.map(function(m){return {id:m.id||m,name:m.name||m.id||m};}),
+        cartridges:w.cartridges.map(function(c){return {id:c.id,model_key:c.model||"",
+          task_excerpt:String(c.prompt||"").slice(0,750)};})},null,2);
+  }
+  el("btn-ai-copy").onclick=async function(){
+    try{
+      if(!S.workflow)throw Error("Load a workflow first");
+      if(!navigator.clipboard?.writeText)throw Error("Clipboard is unavailable");
+      await navigator.clipboard.writeText(aiModelBrief(S.workflow,S.models));
+      showMsg("ai-model-status","Brief copied; review before sharing.","ok");
+    }catch(e){showMsg("ai-model-status",e.message,"err");}
+  };
+  el("btn-ai-apply").onclick=function(){
+    try{
+      if(!S.workflow)throw Error("Load a workflow first");
+      var raw=el("ai-model-json").value;if(raw.length>256*1024)throw Error("Model plan exceeds 256 KiB");
+      var map=validateAiModelPlan(JSON.parse(raw),S.workflow,S.models);
+      S.modelMode="independent";el("model-mode").value="independent";applyModelMode();
+      S.workflow.cartridges.forEach(function(c,i){el("model-"+i).value=map[c.id];});
+      updatePrepare();
+      showMsg("ai-model-status","Applied "+S.workflow.cartridges.length+" exact model choices. Review them before Prepare.","ok");
+    }catch(e){showMsg("ai-model-status",e.message,"err");}
+  };
   function modelOptions(sel, preferred){
     sel.innerHTML = ""; sel.appendChild(option("", "Choose an AI model…"));
     S.models.forEach(function(m){ sel.appendChild(option(m.id, m.name || m.id)); });
@@ -2873,6 +2949,10 @@ PAGE_HTML = r"""<!doctype html>
   }
   function renderSetup(){
     var w = S.workflow, wrap = el("cartridges"); wrap.innerHTML = "";
+    el("ai-model-json").value = w.model_plan ? JSON.stringify(w.model_plan,null,2) : "";
+    showMsg("ai-model-status",w.model_plan_error || (w.model_plan ?
+      "Embedded model plan ready for review. Choose Apply to use it." :
+      "No embedded model plan. Paste GPT or Claude JSON if desired."), w.model_plan_error ? "err" : "muted");
     el("setup-workflow").textContent = w.name; el("setup-workflow").classList.remove("hidden");
     el("setup-summary").textContent = w.cartridges.length + " steps run in order, each in a fresh chat.";
     el("cartridge-s").classList.remove("hidden");

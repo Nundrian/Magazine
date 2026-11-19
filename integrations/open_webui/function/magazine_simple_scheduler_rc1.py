@@ -2914,7 +2914,7 @@ PAGE_HTML = r"""<!doctype html>
       +"Never invent model IDs, local benchmarks, change prompts, tool permissions, dependencies or recovery. "
       +'Return ONLY JSON with schema_version "1.0", workflow_name, cartridge_ids in order, '
       +"and cartridge_models mapping EVERY cartridge ID to an available model ID. Optional default_model permitted. "
-      +"This is a recommendation, not permission to run.\\n\\n"
+      +"This is a recommendation, not permission to run.\n\n"
       +JSON.stringify({host:"Open WebUI",workflow_name:w.name,
         available_models:models.map(function(m){return {id:m.id||m,name:m.name||m.id||m};}),
         cartridges:w.cartridges.map(function(c){return {id:c.id,model_key:c.model||"",

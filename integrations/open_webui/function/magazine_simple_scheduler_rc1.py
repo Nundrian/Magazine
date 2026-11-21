@@ -2,7 +2,7 @@
 title: Magazine Simple
 author: Nundrian
 author_url: https://github.com/Nundrian/Magazine
-version: 0.3.0-scheduler.rc1
+version: 0.3.1-ledger.rc1
 required_open_webui_version: 0.12.5
 requirements: httpx==0.28.1, PyYAML==6.0.3
 """
@@ -57,7 +57,7 @@ try:
 except Exception:  # pragma: no cover - only absent outside Open WebUI
     Request = None
 
-VERSION = "0.3.0-scheduler.rc1"
+VERSION = "0.3.1-ledger.rc1"
 PAGE_PATH = "/magazine-simple"
 API = "/api/magazine-simple"
 DEFAULT_WORKSPACE = "/workspace/magazine-simple"
@@ -2547,8 +2547,18 @@ PAGE_HTML = r"""<!doctype html>
   .attempt-facts dt{color:var(--muted)}.attempt-facts dd{margin:0;overflow-wrap:anywhere}
   .attempt-message{white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto}
   .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
-  @media(max-width:1050px){.dashboard-table{min-width:780px}.compact-ledger{min-width:620px}}
+  @media(max-width:1050px){.dashboard-table{min-width:780px}.compact-ledger{min-width:0}}
   button:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .ledger-navigation{margin-top:10px;gap:8px}
+  .ledger-navigation select{max-width:100%;min-width:0}.ledger-navigation #ledger-cartridge{width:240px}
+  .ledger-follow{display:inline-flex;align-items:center;gap:6px}.ledger-follow input{width:auto}
+  .ledger-secondary{overflow-wrap:anywhere;font-size:13px;margin:8px 0}
+  .compact-ledger th:first-child{width:24%}.compact-ledger th:last-child{width:30%}
+  .cartridge-detail{padding-top:8px}.attempt-detail>summary{cursor:pointer}
+  .attempt-body{padding:8px 0}.evidence-json{max-height:280px;overflow:auto;white-space:pre;overflow-wrap:normal;font-size:12px}
+  .evidence-detail{margin:8px 0;max-width:100%;min-width:0}
+  .copy-evidence{margin:6px 0}.ledger-overview td{white-space:normal;overflow-wrap:anywhere}
+  #run-step-section .note{max-height:160px;overflow:auto}
 </style>
 </head>
 <body>
@@ -2697,11 +2707,21 @@ PAGE_HTML = r"""<!doctype html>
       <p id="run-token-status" class="muted" role="status"></p>
     </div>
     <!-- End token display -->
+    <dl class="attempt-facts run-times"><dt>Cumulative execution</dt><dd id="run-execution-time">unavailable</dd><dt>Current cartridge / model</dt><dd id="run-active-time">None</dd><dt>Execution span</dt><dd id="run-wall-time">unavailable</dd></dl>
+    <p class="muted">Cumulative execution adds timed attempts, including tools and retries, excluding queue waits. Execution span runs from the first attempt to the last recorded finish (or now while running), including gaps. Missing timestamps make cumulative duration incomplete; model-only compute time is not recorded.</p>
     <progress id="run-progress" aria-label="Finished workflow steps" value="0" max="1"></progress>
-    <ol id="run-steps" class="timeline"></ol>
+    <details id="run-step-section"><summary>Step controls and recovery</summary><ol id="run-steps" class="timeline"></ol></details>
     <div class="actions"><button class="primary" id="btn-start" disabled>Start workflow</button><button id="btn-stop" disabled>Stop workflow</button><button id="btn-recover" class="hidden">Recover retained checkpoint</button><button id="btn-refresh-run" disabled>Check progress</button></div>
     <p id="control-msg" class="msg hidden" role="status"></p>
-    <details id="ledger-section"><summary>Ledger</summary><label for="ledger-filter">Status filter</label><select id="ledger-filter"><option value="all">All cartridges</option><option value="failed">Failed</option><option value="running">Running</option><option value="halted">Halted</option><option value="interrupted">Interrupted</option><option value="stopped">Stopped</option><option value="pending">Pending</option><option value="done">Done</option></select><div id="run-ledger"></div></details>
+    <details id="ledger-section"><summary>Ledger</summary>
+      <div class="actions ledger-navigation">
+        <label for="ledger-filter">Status filter</label><select id="ledger-filter"><option value="all">All cartridges</option></select>
+        <label for="ledger-cartridge">Cartridge</label><select id="ledger-cartridge" aria-describedby="ledger-position ledger-filter-note"></select>
+        <button id="ledger-prev" class="small" type="button">Previous</button><button id="ledger-next" class="small" type="button">Next</button>
+        <span id="ledger-position" class="muted" role="status"></span>
+        <label class="ledger-follow"><input id="ledger-follow" type="checkbox"> Follow current cartridge</label>
+      </div><p id="ledger-filter-note" class="muted" role="status"></p><div id="run-ledger"></div>
+    </details>
   </div>
 </section>
 
@@ -2732,7 +2752,7 @@ PAGE_HTML = r"""<!doctype html>
   <div id="saved-results"></div>
 </section>
 </main>
-<footer class="muted" id="magazine-version">Magazine Simple 0.3.0-scheduler.rc1</footer>
+<footer class="muted" id="magazine-version">Magazine Simple 0.3.1-ledger.rc1</footer>
 <script>
 (function(){
   "use strict";
@@ -3108,53 +3128,201 @@ PAGE_HTML = r"""<!doctype html>
     el("run-token-status").textContent = note + " Updates when Open WebUI reports usage.";
   }
   // --- End token display ---
-  function ledgerDuration(c){
-    var starts = c.attempts.map(function(a){ return Date.parse(a.started); }).filter(Number.isFinite);
-    var ends = c.attempts.map(function(a){ return Date.parse(a.finished); }).filter(Number.isFinite);
-    if (!starts.length) return '—';
-    var seconds = c.attempts.reduce(function(n,a){
-      var start = Date.parse(a.started), end = Date.parse(a.finished);
-      return n + (Number.isFinite(start) && Number.isFinite(end) ? Math.max(0, (end-start)/1000) : 0);
-    }, 0);
-    return seconds + ' s' + (c.status === 'running' ? ' · active' : '');
+  // View preferences contain identities and expansion flags only, never evidence.
+  function readLedgerViews(){
+    try { var v = JSON.parse(stored('magazine.ledger.v1') || '{}'); return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; }
+    catch(e){ return {}; }
+  }
+  function ledgerView(r){
+    if (!Object.prototype.hasOwnProperty.call(S.ledgerViews, r.id)) S.ledgerViews[r.id] = {};
+    var v = S.ledgerViews[r.id];
+    if (!v || typeof v !== 'object' || Array.isArray(v)) v = S.ledgerViews[r.id] = {};
+    if (!v.open || typeof v.open !== 'object') v.open = {};
+    if (typeof v.filter !== 'string') v.filter = 'all';
+    return v;
+  }
+  function saveLedgerView(){
+    try { localStorage.setItem('magazine.ledger.v1', JSON.stringify(S.ledgerViews)); } catch(e){}
+  }
+  function ledgerStatus(value){ return value === 'done' ? 'Completed' : String(value || 'unavailable').replace(/^./,function(s){return s.toUpperCase();}); }
+  function attemptKey(a,n){ return String(a.attempt_id || (a.chat_id ? a.chat_id + ':' + (a.assistant_id || '') : 'legacy-' + n)); }
+  function uniqueAttempts(cs){
+    var seen = new Map();
+    cs.forEach(function(c){ (c.attempts || []).forEach(function(a,n){
+      var key = a.attempt_id ? 'attempt:' + a.attempt_id : (a.chat_id ? 'chat:' + a.chat_id + ':' + (a.assistant_id || '') : c.id + ':' + n);
+      seen.set(key,{a:a,c:c,n:n});
+    }); });
+    return Array.from(seen.values());
+  }
+  function durationFacts(cs,r){
+    var total = 0, known = 0, missing = 0, active = 0;
+    uniqueAttempts(cs).forEach(function(item){
+      var a = item.a, start = Date.parse(a.started), end = Date.parse(a.finished);
+      var live = r.status === 'running' && item.c.status === 'running' && a.status === 'running' && !a.finished;
+      if (live) end = Date.now();
+      if (Number.isFinite(start) && Number.isFinite(end) && end >= start){ total += (end-start)/1000; known++; if (live) active += (end-start)/1000; }
+      else missing++;
+    });
+    return {seconds:total,known:known,missing:missing,active:active};
+  }
+  function formatDuration(seconds){
+    seconds = Math.max(0,Math.floor(seconds));
+    var hours = Math.floor(seconds/3600), minutes = Math.floor(seconds%3600/60), rest = seconds%60;
+    return (hours ? hours + 'h ' : '') + String(minutes).padStart(2,'0') + 'm ' + String(rest).padStart(2,'0') + 's';
+  }
+  function durationText(f){ return (!f.known && f.missing ? 'unavailable' : formatDuration(f.seconds)) + (f.missing ? ' · incomplete' : ''); }
+  function ledgerDuration(c){ return durationText(durationFacts([c],S.run)); }
+  function renderTimes(){
+    var r = S.run; if (!r) return;
+    var current = r.cartridges.find(function(c){return c.status === 'running';});
+    el('run-execution-time').textContent = durationText(durationFacts(r.cartridges,r));
+    var last=current && (current.attempts || [])[current.attempts.length-1],activeStart=last && Date.parse(last.started);
+    var activeTime=last && last.status==='running' && !last.finished && Number.isFinite(activeStart) && activeStart<=Date.now() ? formatDuration((Date.now()-activeStart)/1000) : 'unavailable';
+    el('run-active-time').textContent = current ? current.id + ' · ' + (last && last.model || current.model) + ' · active attempt ' + activeTime : 'None';
+    var attempts = uniqueAttempts(r.cartridges), starts = attempts.map(function(i){return Date.parse(i.a.started);}).filter(Number.isFinite);
+    var ends = attempts.map(function(i){return Date.parse(i.a.finished);}).filter(Number.isFinite);
+    // Historical runs do not store a reliable run-finished timestamp. Do not
+    // invent one from page time, or count time since workflow preparation.
+    var spanEnd=r.status==='running'?Date.now():Math.max.apply(null,ends),spanStart=Math.min.apply(null,starts);
+    el('run-wall-time').textContent=starts.length && (ends.length || r.status==='running') && spanEnd>=spanStart ? formatDuration((spanEnd-spanStart)/1000) : 'unavailable';
+    var c = r.cartridges.find(function(c){return c.id === ledgerView(r).cid;});
+    if (c){
+      document.querySelectorAll('[data-cartridge-time]').forEach(function(e){e.textContent=ledgerDuration(c);});
+      document.querySelectorAll('[data-attempt-time]').forEach(function(e){var a=(c.attempts || [])[Number(e.dataset.attemptTime)]; if(a) e.textContent=durationText(durationFacts([{id:c.id,status:c.status,attempts:[a]}],r));});
+    }
+  }
+  function factsHTML(pairs){ return '<dl class="attempt-facts">' + pairs.map(function(p){return '<dt>' + esc(p[0]) + '</dt><dd>' + esc(p[1] == null || p[1] === '' ? 'unavailable' : p[1]) + '</dd>';}).join('') + '</dl>'; }
+  function recordDetails(key,label){ return '<details class="evidence-detail" data-ledger-state="' + esc(key) + '"><summary>' + esc(label) + '</summary><button type="button" class="small copy-evidence">Copy evidence</button><span class="copy-status muted" role="status"></span><pre class="pre-doc evidence-json" tabindex="0"></pre></details>'; }
+  function nativeChat(a,label){
+    return typeof a.chat_id === 'string' && a.chat_id.trim() ? '<a class="small" href="/c/' + encodeURIComponent(a.chat_id) + '" target="_blank" rel="noopener">' + esc(label) + '</a>' : '<span class="muted">Saved chat unavailable</span>';
+  }
+  function cachedTokens(a){
+    var t = a.tokens || {}, value = t.cached;
+    if (value == null) value = t.cached_tokens;
+    if (value == null) value = t.cached_input_tokens;
+    return tokenNumber({cached:value},'cached');
   }
   function attemptDetails(c){
-    return c.attempts.map(function(a, n){
-      return '<article class="attempt-detail"><h4>Attempt ' + (a.attempt_number || n+1) + ' · ' + esc(a.status) + '</h4>' +
-        '<dl class="attempt-facts"><dt>Model</dt><dd>' + esc(a.model || c.model) + '</dd><dt>Started</dt><dd>' + esc(a.started || 'unavailable') + '</dd><dt>Finished</dt><dd>' + esc(a.finished || 'unavailable') + '</dd><dt>Duration</dt><dd>' + esc(ledgerDuration({attempts:[a],status:a.status})) + '</dd>' +
-        '<dt>Tokens: input / output / total</dt><dd>' + tokenNumber(a.tokens,'input') + ' / ' + tokenNumber(a.tokens,'output') + ' / ' + tokenNumber(a.tokens,'total') + ' · ' + tokenState(a.tokens) + '</dd></dl>' +
-        (a.chat_id ? '<a href="/c/' + encodeURIComponent(a.chat_id) + '" target="_blank" rel="noopener">Open associated chat</a>' : '') +
+    return (c.attempts || []).map(function(a,n){ return {a:a,n:n}; }).sort(function(x,y){
+      var a=Date.parse(x.a.started),b=Date.parse(y.a.started);
+      return Number.isFinite(a) && Number.isFinite(b) && a!==b ? a-b : x.n-y.n;
+    }).map(function(item){
+      var a=item.a,n=item.n,key='attempt:' + c.id + ':' + attemptKey(a,n);
+      return '<details class="attempt-detail" data-ledger-state="' + esc(key) + '"><summary>Attempt ' + esc(a.attempt_number || n+1) + ' · ' + esc(ledgerStatus(a.status)) + '</summary><div class="attempt-body">' +
+        nativeChat(a,'View chat') + factsHTML([['Exact model ID',a.model || c.model],['Started',a.started],['Finished',a.finished],['Final status',a.status],['Phase',a.phase]]) +
+        '<p>Duration: <span data-attempt-time="' + n + '">' + esc(durationText(durationFacts([{id:c.id,status:c.status,attempts:[a]}],S.run))) + '</span></p>' +
+        '<p>Tokens: input / output / cached / total<br>' + tokenNumber(a.tokens,'input') + ' / ' + tokenNumber(a.tokens,'output') + ' / ' + cachedTokens(a) + ' / ' + tokenNumber(a.tokens,'total') + ' · ' + tokenState(a.tokens) + '</p>' +
         '<p class="attempt-message">' + esc((a.code ? a.code + ' — ' : '') + (a.note || '')) + '</p><p class="attempt-message">' + esc(retryText(c,a)) + '</p>' +
-        '<p>Files: ' + ((a.outputs || []).map(function(f){ return esc(f.path) + ' (' + esc(f.bytes) + ' B)'; }).join(', ') || 'none reported') + '</p>' +
-        '<details><summary>All recorded handover, recovery and attempt fields</summary><pre class="pre-doc">' + esc(JSON.stringify(a,null,2)) + '</pre></details></article>';
+        '<p class="attempt-message">Files: ' + ((a.outputs || []).map(function(f){return esc(f.path) + ' (' + esc(f.bytes) + ' B) · SHA-256: ' + esc(f.sha256 || 'unavailable');}).join('\n') || 'none recorded') + '</p>' +
+        recordDetails('record:' + c.id + ':' + attemptKey(a,n),'All attempt evidence: tools, errors, retry, Antiloop, publication, verification and handover') + '</div></details>';
     }).join('') || '<p>No attempts recorded.</p>';
   }
-  function renderLedger(r){
-    var signature = r.id + S.ledgerFilter + JSON.stringify(r.cartridges);
-    if (S.ledgerSignature === signature) return;
-    S.ledgerSignature = signature;
-    var focus = document.activeElement && document.activeElement.dataset.ledgerIndex;
-    var rows = '<div class="ledger-scroll"><table class="ledger compact-ledger"><caption class="sr-only">Cartridge execution ledger</caption><thead><tr><th scope="col">Cartridge</th><th scope="col">Status</th><th scope="col">Model</th><th scope="col">Attempts</th><th scope="col">Reported tokens</th><th scope="col">Duration</th></tr></thead><tbody>';
-    r.cartridges.forEach(function(c,i){
-      if (S.ledgerFilter !== 'all' && c.status !== S.ledgerFilter) return;
-      var key = r.id + ':' + c.id, open = S.ledgerOpen.has(key), id = 'ledger-detail-' + i;
-      rows += '<tr class="ledger-overview token-subtotal"><td><button class="ledger-expand small" data-ledger-index="' + i + '" aria-expanded="' + open + '" aria-controls="' + id + '">' + (open ? '− ' : '+ ') + esc(c.id) + '</button></td><td>' + esc(c.status) + '</td><td class="truncate" title="' + esc(c.model) + '">' + esc(shortModel(c.model)) + '</td><td>' + c.attempts.length + '</td><td>' + tokenNumber(c.tokens,'total') + ' <span class="muted">' + tokenState(c.tokens) + '</span></td><td>' + esc(ledgerDuration(c)) + '</td></tr>' +
-        '<tr class="ledger-detail' + (open ? '' : ' hidden') + '" id="' + id + '"><td colspan="6">' + (open ? attemptDetails(c) : '') + '</td></tr>';
-    });
-    el('run-ledger').innerHTML = rows + '</tbody></table></div><p class="muted">Exact reported counts; incomplete usage is labelled. Expand a cartridge for every attempt. Complete records remain in LEDGER.md and the download.</p>';
-    el('run-ledger').querySelectorAll('.ledger-expand').forEach(function(button){
-      button.onclick = function(){
-        var c = r.cartridges[Number(button.dataset.ledgerIndex)], key = r.id + ':' + c.id;
-        var open = !S.ledgerOpen.has(key), detail = el(button.getAttribute('aria-controls'));
-        if (open) S.ledgerOpen.add(key); else S.ledgerOpen.delete(key);
-        button.setAttribute('aria-expanded', String(open)); button.textContent = (open ? '− ' : '+ ') + c.id;
-        detail.classList.toggle('hidden', !open);
-        detail.firstElementChild.innerHTML = open ? attemptDetails(c) : '';
-      };
-    });
-    if (focus != null){ var b = el('run-ledger').querySelector('[data-ledger-index="' + focus + '"]'); if (b) b.focus({preventScroll:true}); }
+  function cartridgeDetails(c){
+    var aa=c.attempts || [],first=aa[0] || {},last=aa[aa.length-1] || {};
+    var failed=['failed','halted','stopped','interrupted'].indexOf(c.status)>=0;
+    return factsHTML([['Full cartridge ID',c.id],['Name',c.name || c.title || c.description],['Assigned model / exact ID',c.model],['Execution status',c.status],['Started',c.started || first.started],[c.status==='done'?'Completed':'Last attempt finished',c.finished || last.finished],['Attempts',aa.length],['Reported total tokens',tokenNumber(c.tokens,'total') + ' · ' + tokenState(c.tokens)],['Result / verification',c.verification_status || (typeof c.verification==='object'?JSON.stringify(c.verification):c.verification) || last.phase || 'See recorded cartridge and attempt evidence']]) +
+      (failed?'<p>Failure / HALT reason</p><p class="attempt-message">' + esc(c.reason || c.note || last.note || 'unavailable') + '</p>':'') +
+      '<p>Execution duration: <span data-cartridge-time>' + esc(ledgerDuration(c)) + '</span></p>' +
+      '<p class="muted">Incoming and outgoing handovers, tool records, receipts and verification are shown exactly where recorded below. Fields absent from historical records remain unavailable. Full tool conversations are in the saved chats.</p>' +
+      recordDetails('cartridge-record:' + c.id,'All recorded cartridge fields, result and handover information') +
+      '<h4>Attempt history</h4>' + attemptDetails(c);
   }
-  el('ledger-filter').onchange = function(){ S.ledgerFilter = this.value; if (S.run) renderLedger(S.run); };
+  function bindLedgerDetails(r,c,v){
+    el('run-ledger').querySelectorAll('details[data-ledger-state]').forEach(function(d){
+      var key=d.dataset.ledgerState;
+      function fill(){
+        if (!d.open) return;
+        var pre=d.querySelector(':scope > pre');
+        if (!pre || pre.dataset.loaded) return;
+        var record;
+        if (key === 'cartridge-record:' + c.id){record=Object.assign({},c);delete record.attempts;}
+        else record=(c.attempts || []).find(function(a,n){return key === 'record:' + c.id + ':' + attemptKey(a,n);});
+        pre.textContent=JSON.stringify(record == null ? {} : record,null,2);pre.dataset.loaded='true';
+      }
+      d.open=!!v.open[key];fill();
+      d.addEventListener('toggle',function(){
+        // Ignore queued toggle events from DOM nodes replaced by a poll.
+        if (!d.isConnected || !S.run || S.run.id!==r.id) return;
+        if(d.open) v.open[key]=true; else delete v.open[key];
+        if(d.classList.contains('attempt-detail') && d.open) v.attempt=key;
+        fill();saveLedgerView();
+      });
+    });
+    el('run-ledger').querySelectorAll('.copy-evidence').forEach(function(b){b.onclick=async function(){
+      var pre=b.parentNode.querySelector('pre'),status=b.parentNode.querySelector('.copy-status');
+      try { await navigator.clipboard.writeText(pre.textContent); status.textContent=' Copied'; }
+      catch(e){ var selection=window.getSelection(),range=document.createRange();range.selectNodeContents(pre);selection.removeAllRanges();selection.addRange(range);status.textContent=' Evidence selected; press Ctrl+C to copy.'; }
+    };});
+  }
+  function captureLedgerView(){
+    // Native toggle events are queued (especially in Chromium). Capture the
+    // actual DOM before a selection or poll can replace it.
+    var previous=S.ledgerRenderedRun && S.ledgerViews[S.ledgerRenderedRun];
+    if(previous){
+      previous.section=el('ledger-section').open;
+      el('run-ledger').querySelectorAll('details[data-ledger-state]').forEach(function(d){
+        if(d.open)previous.open[d.dataset.ledgerState]=true;else delete previous.open[d.dataset.ledgerState];
+      });
+    }
+    saveLedgerView();
+  }
+  window.addEventListener('pagehide',captureLedgerView);
+  window.addEventListener('beforeunload',captureLedgerView);
+  function renderLedger(r){
+    captureLedgerView();
+    var v=ledgerView(r),cs=r.cartridges || [],current=cs.find(function(c){return c.status==='running';});
+    var statuses=['all'];cs.forEach(function(c){if(statuses.indexOf(c.status)<0)statuses.push(c.status);});
+    if(statuses.indexOf(v.filter)<0)statuses.push(v.filter);
+    var filters=statuses.map(function(s){return '<option value="' + esc(s) + '">' + esc(s==='all'?'All cartridges':ledgerStatus(s)) + '</option>';}).join('');
+    if(el('ledger-filter').innerHTML!==filters)el('ledger-filter').innerHTML=filters;
+    if(v.follow && current){v.cid=current.id;v.filter='all';}
+    var matching=cs.filter(function(c){return v.filter==='all' || c.status===v.filter;});
+    var c=cs.find(function(c){return c.id===v.cid;});
+    if(!c && matching.length){c=matching[0];v.cid=c.id;}
+    var filtered=c && matching.indexOf(c)<0;
+    var options=cs.filter(function(item){return matching.indexOf(item)>=0 || item===c;}).map(function(item){return '<option value="' + esc(item.id) + '">' + esc(item.id + ' · ' + ledgerStatus(item.status) + (item===c && filtered?' (outside filter)':'')) + '</option>';}).join('');
+    if(el('ledger-cartridge').innerHTML!==options)el('ledger-cartridge').innerHTML=options;
+    el('ledger-filter').value=v.filter;el('ledger-cartridge').value=c?c.id:'';el('ledger-cartridge').disabled=!c;
+    el('ledger-follow').checked=!!v.follow;
+    var index=c?cs.indexOf(c):-1,matchIndex=matching.indexOf(c);
+    el('ledger-position').textContent=c?'Cartridge ' + (index+1) + ' of ' + cs.length:'No cartridges match';
+    el('ledger-filter-note').textContent=filtered?'Selected cartridge kept visible after its status changed. Navigation uses the filter.':(v.filter==='all'?'':matching.length + ' matching cartridges');
+    el('ledger-prev').disabled=matchIndex<=0;
+    el('ledger-next').disabled=!matching.length || matchIndex===matching.length-1;
+    if(S.ledgerRenderedRun!==r.id)el('ledger-section').open=!!v.section;
+    S.ledgerRenderedRun=r.id;
+    var active=document.activeElement,focus=active && active.id,focusKey=active && active.closest('details[data-ledger-state]');
+    var signature=JSON.stringify([r.id,v.cid,v.filter,!!v.follow,c,r.status]);
+    if(S.ledgerSignature!==signature){
+      var scrolls=[];el('run-ledger').querySelectorAll('pre,.attempt-message').forEach(function(e,n){if(e.scrollTop || e.scrollLeft)scrolls.push([n,e.scrollTop,e.scrollLeft]);});
+      S.ledgerSignature=signature;
+      el('run-ledger').innerHTML=c?'<div class="ledger-scroll"><table class="ledger compact-ledger"><caption class="sr-only">Selected cartridge execution ledger</caption><thead><tr><th>Cartridge</th><th>Status</th><th>Attempts</th><th>Tokens</th></tr></thead><tbody><tr class="ledger-overview token-subtotal"><td>' + esc(c.id) + '</td><td>' + esc(ledgerStatus(c.status)) + '</td><td>' + (c.attempts || []).length + '/5</td><td>' + tokenNumber(c.tokens,'total') + ' <span class="muted">' + tokenState(c.tokens) + '</span></td></tr></tbody></table></div>' +
+        '<p class="ledger-secondary">Model: <span>' + esc(c.model || 'unavailable') + '</span> · Duration: <span data-cartridge-time>' + esc(ledgerDuration(c)) + '</span></p>' +
+        (c.status==='running' && (c.attempts || []).length?nativeChat(c.attempts[c.attempts.length-1],'Open current chat'):'') +
+        '<details class="cartridge-detail" data-ledger-state="' + esc('cartridge:' + c.id) + '"><summary>Cartridge details and attempts</summary>' + cartridgeDetails(c) + '</details>':'<p class="muted">No cartridges match this filter. Choose another status.</p>';
+      if(c)bindLedgerDetails(r,c,v);
+      el('run-ledger').querySelectorAll('pre,.attempt-message').forEach(function(e,n){var s=scrolls.find(function(s){return s[0]===n;});if(s){e.scrollTop=s[1];e.scrollLeft=s[2];}});
+      if(focusKey && !active.isConnected){var key=focusKey.dataset.ledgerState;el('run-ledger').querySelectorAll('details[data-ledger-state]').forEach(function(d){if(d.dataset.ledgerState===key)d.querySelector('summary').focus({preventScroll:true});});}
+      else if(focus && el(focus))el(focus).focus({preventScroll:true});
+    }
+    saveLedgerView();renderTimes();
+  }
+  function selectLedgerCartridge(id){var v=ledgerView(S.run);v.cid=id;v.follow=false;saveLedgerView();renderLedger(S.run);}
+  el('ledger-cartridge').onchange=function(){selectLedgerCartridge(this.value);};
+  function moveLedger(delta){
+    if(!S.run)return;var v=ledgerView(S.run),cs=S.run.cartridges.filter(function(c){return v.filter==='all' || c.status===v.filter;}),i=cs.findIndex(function(c){return c.id===v.cid;});
+    var next=cs[i<0?0:i+delta];if(next)selectLedgerCartridge(next.id);
+  }
+  el('ledger-prev').onclick=function(){moveLedger(-1);};el('ledger-next').onclick=function(){moveLedger(1);};
+  el('ledger-filter').onchange=function(){
+    if(!S.run)return;var v=ledgerView(S.run);v.filter=this.value;v.follow=false;
+    var cs=S.run.cartridges.filter(function(c){return v.filter==='all' || c.status===v.filter;});
+    if(!cs.some(function(c){return c.id===v.cid;}))v.cid=cs.length?cs[0].id:null;
+    saveLedgerView();renderLedger(S.run);
+  };
+  el('ledger-follow').onchange=function(){if(S.run){ledgerView(S.run).follow=this.checked;saveLedgerView();renderLedger(S.run);}};
+  el('ledger-section').addEventListener('toggle',function(){if(S.run){ledgerView(S.run).section=this.open;saveLedgerView();}});
+  setInterval(function(){if(!document.hidden)renderTimes();},1000);
 
   async function restartFrom(cid){
     if (!S.run) return;
@@ -3286,8 +3454,7 @@ PAGE_HTML = r"""<!doctype html>
   // One server-authoritative project list; viewing never changes queue order.
   var dashboardRequest = 0, selectionRequest = 0, restoring = true;
   S.selected = null;
-  S.ledgerOpen = new Set();
-  S.ledgerFilter = 'all';
+  S.ledgerViews = readLedgerViews();
   function esc(value){ return String(value == null ? '' : value).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
   function shortModel(value){ return String(value || 'unavailable').split('/').pop(); }
   function selectionSaved(){

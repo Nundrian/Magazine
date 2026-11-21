@@ -30,7 +30,7 @@ Stop is not a pause button. When a project fails or is stopped, examine its ledg
 
 ## 5. Read the ledger and keep your results
 
-The **Ledger** shows cartridge status, model, attempts, tokens and time taken. Expand a row to see what happened in an attempt. Unavailable token counts are labelled honestly rather than guessed.
+The **Ledger** now shows **one selected cartridge at a time**. Use the selector, Previous/Next and status filter, or enable Follow current to track the running cartridge. The four-field summary keeps model and duration beneath it; expand cartridge details and individual attempts for tool evidence, retry decisions and full records. Unavailable token counts are labelled honestly rather than guessed. The run header also distinguishes cumulative timed-attempt duration from the overall execution span. Attempt-specific View chat links open recorded native Open WebUI chats in a new tab; signing in through your normal browser session is required.
 
 Under **Results and previous work**, open saved runs and download a **results ZIP**. Reopening Magazine should restore saved details; stopped or interrupted work does not run again automatically.
 

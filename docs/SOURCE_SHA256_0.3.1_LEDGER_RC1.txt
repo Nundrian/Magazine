@@ -1,0 +1,1 @@
+da550dbc5e659c411c77395550d9ff59124663f48f20dc6b594f8f61840e0eec  integrations/open_webui/function/magazine_simple_scheduler_rc1.py

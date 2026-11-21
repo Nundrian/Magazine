@@ -1,5 +1,20 @@
 # Changelog
 
+## Magazine Simple 0.3.1-ledger.rc1 — installed ledger update, 21 November 2026
+
+**Latest source-verified release candidate for Open WebUI 0.12.5.** Exact Function source SHA-256: `da550dbc5e659c411c77395550d9ff59124663f48f20dc6b594f8f61840e0eec`. Updated in place with Function identity and configuration preserved; no inference was started.
+
+- **Compact ledger:** one selected cartridge, Previous/Next, workflow-order position, dynamic status filtering and explicit Follow current.
+- **Complete attempt history:** expandable records, native chat links, full lazy-loaded evidence and copy controls.
+- **Timing:** per-attempt and cumulative execution duration separated from overall execution span; server-reported tokens retain missing/partial/zero distinctions.
+- **Persistence:** selection and disclosures retained on refresh; restores are read-only.
+- **No engine change:** scheduler, retry policy, checkpoints, Antiloop, STOP, publication and exports remain AST-identical aside from version/UI.
+- **Validation:** 446 passed, 21 skipped, zero reported failures. Firefox and Chromium UI acceptance and installed-host read-only checks passed. A signed-in native chat view and active-model execution were not verified.
+
+[Exact updated source](integrations/open_webui/function/magazine_simple_scheduler_rc1.py) · [Release qualification](docs/SIMPLE_0.3.1_LEDGER_RC1.md) · [Full test report](docs/TEST_0.3.1_LEDGER_RC1.md) · [Install/rollback notes](docs/INSTALL_0.3.1_LEDGER_RC1.md)
+
+---
+
 ## Magazine Simple 0.3.0-scheduler.rc1 — locally installed, 18 November 2026
 
 **Latest release candidate for Open WebUI 0.12.5.** The supplied exact Function source matches the installed source SHA-256 `acb55b3421bf5ea23510dd1b3f3372d1f19183a7bd6dec8da9940c89bea3ceb3`. The installed Function and original user data were preserved; installation did not restart the previous failed 52/191-cartridge run.

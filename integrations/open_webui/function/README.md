@@ -1,4 +1,4 @@
-> **Latest Magazine Simple:** [0.3.0-scheduler.rc1](magazine_simple_scheduler_rc1.py) for Open WebUI 0.12.5, with [plain-English setup](../../../docs/USING_MAGAZINE.md) and [technical details](../../../docs/TECHNICAL_0.3.0_SCHEDULER_RC1.md). The beta.5 Function described below remains historical and targets Open WebUI 0.11.3.
+> **Latest Magazine Simple:** [0.3.1-ledger.rc1](magazine_simple_scheduler_rc1.py) for Open WebUI 0.12.5, with [plain-English setup](../../../docs/USING_MAGAZINE.md) and [ledger release notes](../../../docs/SIMPLE_0.3.1_LEDGER_RC1.md). The beta.5 Function described below remains historical and targets Open WebUI 0.11.3.
 
 # Magazine Event Function
 

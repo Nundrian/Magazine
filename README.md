@@ -6,17 +6,29 @@ Magazine is a workflow runner for [Open WebUI](https://github.com/open-webui/ope
 
 You plan the jobs; Magazine runs them. It does not invent a plan or guarantee the AI's work is correct.
 
-**Latest installed and source-verified version:** **0.3.0-scheduler.rc1** (18 November 2026), tested with **Open WebUI 0.12.5**. This is a **release candidate**, not a general production certification.
+**Latest installed and source-verified version:** **0.3.1-ledger.rc1** (21 November 2026), tested with **Open WebUI 0.12.5**. This is a **release candidate**, not a general production certification.
 
-[**Download latest source ZIP**](downloads/Magazine-Simple-0.3.0-scheduler.rc1-source.zip) · [**Exact Function source**](integrations/open_webui/function/magazine_simple_scheduler_rc1.py) · [**How to use Magazine**](docs/USING_MAGAZINE.md) · [**Technical details**](docs/TECHNICAL_0.3.0_SCHEDULER_RC1.md) · [**Changelog**](CHANGELOG.md)
+[**Latest exact Function source**](integrations/open_webui/function/magazine_simple_scheduler_rc1.py) · [**Release notes and test report**](docs/SIMPLE_0.3.1_LEDGER_RC1.md) · [**Full repository ZIP**](https://github.com/Nundrian/Magazine/archive/refs/heads/main.zip) · [**How to use Magazine**](docs/USING_MAGAZINE.md) · [**Technical details**](docs/SIMPLE_0.3.1_LEDGER_RC1.md) · [**Changelog**](CHANGELOG.md)
 
 ## The interface
+
+**The picture below shows the previous 0.3.0 layout**; the latest release replaces the long six-column ledger with a compact single-cartridge view. The other dashboard controls remain.
 
 ![Annotated continuous walkthrough of Magazine's dashboard, workflow selection, model setup, tools, running view, ledger and previous results](docs/images/magazine-simple-0.3.0-walkthrough.webp)
 
 *Built from the owner's actual 18 November 2026 screenshots, with arrows and short explanations. Different expanded/collapsed states are arranged vertically to make one readable walkthrough; it is **not** an unedited single browser capture.*
 
-## What's new in 0.3.0
+## What's new in 0.3.1
+
+- **One selected cartridge at a time:** cartridge picker, Previous/Next, position, status filtering and optional following of the running cartridge.
+- **Full evidence, less clutter:** compact four-field summary with model and duration; expandable cartridge and attempt records, including tools, errors, handovers and verification evidence.
+- **Access saved chats:** attempt-specific native Open WebUI links; opening the full conversation in a human-authenticated browser still needs independent verification.
+- **Accurate timing:** cumulative timed attempts distinct from the full execution span. Token accounting remains server-reported, with unknown/incomplete usage identified.
+- **Restores what you were viewing:** remembers the selected cartridge and expanded sections without starting inference.
+
+**Verification:** the supplied release reports 446 passing checks and 21 skips. Firefox/Chromium installed-host UI checks passed; native signed-in chat rendering and live-model interaction were not tested. [Read the qualification and limits](docs/SIMPLE_0.3.1_LEDGER_RC1.md).
+
+## What changed in 0.3.0
 
 - **More than one project:** the dashboard shows each project's status, current cartridge, model, token reporting and position in the queue.
 - **Two scheduling choices:** **Sequential** finishes one project before starting the next. **Round Robin** gives projects turns, switching after each completed and verified cartridge. Only **one cartridge runs at a time**.
@@ -44,13 +56,13 @@ If a run stops, inspect the recorded reason. You can continue from an eligible c
 
 The repository includes the exact source of the version installed on Open WebUI 0.12.5:
 
-**[Download source ZIP](downloads/Magazine-Simple-0.3.0-scheduler.rc1-source.zip)** or read [the versioned Function source](integrations/open_webui/function/magazine_simple_scheduler_rc1.py).
+**Read the latest [Function source](integrations/open_webui/function/magazine_simple_scheduler_rc1.py)** (SHA-256 `da550dbc5e659c411c77395550d9ff59124663f48f20dc6b594f8f61840e0eec`) or [download the full repository as a ZIP](https://github.com/Nundrian/Magazine/archive/refs/heads/main.zip). The previous 0.3.0 source-only release remains [available here](downloads/Magazine-Simple-0.3.0-scheduler.rc1-source.zip). Do not confuse a repository archive with a cartridge workflow ZIP. See [installation notes](docs/INSTALL_0.3.1_LEDGER_RC1.md). The [versioned Function source](integrations/open_webui/function/magazine_simple_scheduler_rc1.py) is maintained at the same path used by the installed Open WebUI Function.
 
 Make a backup and ensure the scheduler has no active or queued work before updating. In **Open WebUI → Admin Panel → Functions**, edit the existing **Magazine Simple** Function and replace its source, keeping its Function identity and settings. Save, then open **`/magazine-simple`**.
 
 **Do not** upload the Function source or a source-release ZIP using **Add a workflow**: that control is for cartridge workflows only. The **Sidebar Launcher 0.1.0** is separate and unchanged.
 
-For requirements, a source checksum, recovery behaviour, security notes and testing limitations, see the [technical guide](docs/TECHNICAL_0.3.0_SCHEDULER_RC1.md).
+For the latest source checksum, installation evidence and limitations, see the [0.3.1 ledger technical record](docs/SIMPLE_0.3.1_LEDGER_RC1.md). The [0.3.0 technical guide](docs/TECHNICAL_0.3.0_SCHEDULER_RC1.md) remains available for the unchanged engine.
 
 ## What Magazine can — and cannot — promise
 
